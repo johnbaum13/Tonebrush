@@ -672,7 +672,12 @@
       <option value="lissajous">lissajous · bass vs treble</option>
       <option value="orbital">orbital · three planets</option>
       <option value="grid">grid · cellular bloom</option>
+      <option value="etch">etch · pitch steers the pen</option>
     </select>
+  </div>
+
+  <div class="help-text" id="etchHelp" style="display:none;">
+    Etch-a-sketch: one continuous line. Higher notes curl it right, lower notes curl it left, louder plays faster, and it bounces off the edges. Pitch is judged against your running average — so it adapts to whatever register you're playing in.
   </div>
 
   <div class="help-text">
@@ -899,6 +904,9 @@ const state = {
   palette: 'apollo',
   bgColor: '#f5f1e8',
   aspect: 'free',
+  // etch-a-sketch pen
+  pen: { x: 0, y: 0, heading: 0, init: false },
+  centroidAvg: 0,
   layers: [true, true, true], // bass mid treble
   // smoothed values
   smoothBass: 0, smoothMid: 0, smoothTreble: 0,
@@ -1114,6 +1122,13 @@ function paintFrame() {
   state.scrollX += state.flow * (0.5 + state.rms * sens * 2);
   if (state.scrollX > w) state.scrollX = 0;
 
+  if (state.motionMode === 'etch') {
+    // Etch-a-sketch: one continuous pen, pitch steers, volume drives speed
+    drawEtchSketch(w, h, energies, onsetFired);
+    requestAnimationFrame(paintFrame);
+    return;
+  }
+
   // Each layer paints based on its energy and the motion mode
   for (let layer = 0; layer < 3; layer++) {
     if (!state.layers[layer]) continue;
@@ -1142,6 +1157,85 @@ function pickLoudestLayer(energies) {
     if (energies[i] > max) { max = energies[i]; idx = i; }
   }
   return idx;
+}
+
+function loudestEnabledLayer(energies) {
+  let max = -1, idx = 0;
+  for (let i = 0; i < 3; i++) {
+    if (state.layers[i] && energies[i] > max) { max = energies[i]; idx = i; }
+  }
+  return idx;
+}
+
+function drawEtchSketch(w, h, energies, onsetFired) {
+  const pen = state.pen;
+
+  // (Re)initialize the pen at center if needed
+  if (!pen.init || pen.x < 0 || pen.x > w || pen.y < 0 || pen.y > h) {
+    if (!pen.init) {
+      pen.x = w / 2;
+      pen.y = h / 2;
+      pen.heading = -Math.PI / 2; // start heading "up"
+      pen.init = true;
+    }
+  }
+
+  // Track a running average of pitch (spectral centroid) so steering
+  // pivots around the player's actual register, not a fixed frequency.
+  if (state.centroidAvg === 0) state.centroidAvg = state.centroid || 1000;
+  state.centroidAvg = state.centroidAvg * 0.995 + state.centroid * 0.005;
+
+  // --- STEERING: pitch above average curls right, below curls left ---
+  const dev = state.centroid - state.centroidAvg;     // +higher / -lower
+  const norm = Math.max(-1, Math.min(1, dev / 1200));  // clamp to [-1, 1]
+  const maxTurn = 0.18;                                 // radians per frame at full deflection
+  const turn = norm * maxTurn * (0.5 + state.flow * 0.4);
+  pen.heading += turn;
+
+  // --- SPEED: louder = faster (with a small floor so the line keeps flowing) ---
+  const sens = state.sensitivity;
+  const speed = (0.6 + state.rms * sens * 26) * (0.4 + state.flow * 0.35);
+
+  // proposed next position
+  let nx = pen.x + Math.cos(pen.heading) * speed;
+  let ny = pen.y + Math.sin(pen.heading) * speed;
+
+  // --- BOUNCE off the walls (reflect heading, clamp inside) ---
+  if (nx < 0)      { nx = 0;     pen.heading = Math.PI - pen.heading; }
+  else if (nx > w) { nx = w;     pen.heading = Math.PI - pen.heading; }
+  if (ny < 0)      { ny = 0;     pen.heading = -pen.heading; }
+  else if (ny > h) { ny = h;     pen.heading = -pen.heading; }
+
+  // color from the loudest active band — so pitch still tints the line
+  const layer = loudestEnabledLayer(energies);
+  const e = energies[layer];
+  if (!state.layers[layer]) { pen.x = nx; pen.y = ny; return; }
+
+  // line weight scales with brush size + loudness
+  const lineWidth = Math.max(1, state.brushSize * (0.12 + e * 0.5));
+  const opacity = Math.min(0.95, 0.4 + e * 0.5);
+
+  ctx.strokeStyle = paletteColor(layer, opacity);
+  ctx.lineWidth = lineWidth;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(pen.x, pen.y);
+  ctx.lineTo(nx, ny);
+  ctx.stroke();
+
+  // on a transient, drop a little node on the line for accent
+  if (onsetFired) {
+    ctx.fillStyle = palettes[state.palette].accent;
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    ctx.arc(nx, ny, lineWidth * 0.9 + 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  pen.x = nx;
+  pen.y = ny;
 }
 
 function getMotionPosition(layer, w, h, energies) {
@@ -1374,7 +1468,13 @@ bind('onsetSlider', 'input', e => {
   state.onsetThreshold = parseFloat(e.target.value);
   document.getElementById('onsetVal').textContent = state.onsetThreshold.toFixed(2);
 });
-bind('motionMode', 'change', e => { state.motionMode = e.target.value; });
+bind('motionMode', 'change', e => {
+  state.motionMode = e.target.value;
+  // re-center the pen each time etch is (re)selected
+  state.pen.init = false;
+  state.centroidAvg = 0;
+  document.getElementById('etchHelp').style.display = e.target.value === 'etch' ? 'block' : 'none';
+});
 bind('paletteSel', 'change', e => { state.palette = e.target.value; });
 bind('bgSel', 'change', e => {
   state.bgColor = e.target.value;
@@ -1445,6 +1545,7 @@ bind('clearBtn', 'click', () => {
   const fr = canvasFrame.getBoundingClientRect();
   ctx.fillStyle = state.bgColor;
   ctx.fillRect(0, 0, fr.width, fr.height);
+  state.pen.init = false; // re-center the etch pen on a fresh canvas
 });
 bind('snapBtn', 'click', () => {
   const url = stage.toDataURL('image/png');
