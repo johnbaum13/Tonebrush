@@ -1,0 +1,1461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MIDI Turtle — Layered Drawing</title>
+<style>
+  :root {
+    --bg: #1a1a1a;
+    --panel: #242424;
+    --panel-2: #2e2e2e;
+    --text: #e8e8e8;
+    --text-dim: #999;
+    --text-faint: #666;
+    --accent: #6b8eff;
+    --border: #333;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 14px;
+    padding: 20px;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 500; margin: 0 0 4px; }
+  .sub { color: var(--text-dim); font-size: 13px; margin-bottom: 16px; }
+  .toolbar {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+  button {
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  button:hover { background: #3a3a3a; border-color: #444; }
+  button:active { transform: scale(0.98); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+  button.primary:hover { background: #5a7eef; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  select {
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 7px 10px; font-size: 13px; font-family: inherit;
+    cursor: pointer;
+  }
+  .status {
+    font-size: 12px; color: var(--text-dim); padding: 4px 10px;
+    background: var(--panel-2); border-radius: 6px;
+  }
+  .status.ok { color: #6bdc8a; }
+  .status.err { color: #e87878; }
+  .readouts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .readout { background: var(--panel); border-radius: 6px; padding: 8px 12px; }
+  .readout .label {
+    font-size: 11px; color: var(--text-dim); text-transform: uppercase;
+    letter-spacing: 0.5px; margin-bottom: 2px;
+  }
+  .readout .value { font-size: 16px; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+  .readout.layer-active { border: 1px solid var(--accent); }
+  .color-swatch {
+    display: inline-block;
+    width: 16px; height: 16px;
+    border-radius: 3px;
+    border: 1px solid rgba(255,255,255,0.2);
+  }
+  .canvas-wrap {
+    position: relative;
+    background: var(--panel);
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 12px;
+    display: flex;
+    justify-content: center;
+  }
+  .canvas-stack {
+    position: relative;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .canvas-stack canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 4px;
+  }
+  .canvas-stack canvas:not(:first-child) {
+    position: absolute; top: 0; left: 0;
+    pointer-events: none;
+  }
+  .layer-badge {
+    position: absolute;
+    top: 18px; right: 18px;
+    background: rgba(0, 0, 0, 0.65);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+    pointer-events: none;
+    backdrop-filter: blur(4px);
+  }
+  .layer-badge .dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .info {
+    background: var(--panel); border-radius: 8px; padding: 14px 18px;
+    font-size: 13px;
+  }
+  .info h3 { margin: 0 0 8px; font-size: 13px; font-weight: 500; }
+  .mappings {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 6px; color: var(--text-dim);
+  }
+  .mappings strong { color: var(--text); font-weight: 500; }
+  .keyboard-hint {
+    margin-top: 10px; padding-top: 10px;
+    border-top: 1px solid var(--border);
+    font-size: 12px; color: var(--text-faint);
+  }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; color: var(--text-dim); font-size: 12px; }
+  details[open] summary { margin-bottom: 8px; }
+  .cc-monitor {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px; color: var(--text-dim); white-space: pre;
+    background: #1a1a1a; padding: 8px; border-radius: 4px;
+    max-height: 100px; overflow-y: auto;
+  }
+  .control-row {
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .control-row label { color: var(--text-dim); font-size: 12px; min-width: 110px; }
+  input[type="number"] {
+    width: 60px; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 4px 8px; font-family: inherit;
+  }
+  input[type="range"] { flex: 1; max-width: 250px; }
+  .checkbox-row {
+    display: flex; align-items: center; gap: 6px;
+    color: var(--text-dim); font-size: 12px;
+    cursor: pointer;
+  }
+  .checkbox-row input { cursor: pointer; }
+  .layer-selector { display: flex; gap: 4px; }
+  .layer-btn { padding: 6px 10px; font-size: 12px; }
+  .layer-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
+  .format-selector { display: flex; gap: 4px; }
+  .format-btn { padding: 6px 10px; font-size: 12px; }
+  .format-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
+  .slider-group {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--panel-2); padding: 6px 12px; border-radius: 6px;
+    font-size: 12px; color: var(--text-dim);
+  }
+  .slider-group label { white-space: nowrap; }
+  .slider-group input[type="range"] { width: 90px; }
+  .hue-slider {
+    width: 120px; height: 8px;
+    background: linear-gradient(to right,
+      hsl(0,70%,50%), hsl(60,70%,50%), hsl(120,70%,50%),
+      hsl(180,70%,50%), hsl(240,70%,50%), hsl(300,70%,50%), hsl(360,70%,50%));
+    border-radius: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  .hue-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: white; border: 2px solid #333;
+    cursor: pointer;
+  }
+  .hue-slider::-moz-range-thumb {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: white; border: 2px solid #333;
+    cursor: pointer;
+  }
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 100;
+    backdrop-filter: blur(4px);
+  }
+  .modal-backdrop.show { display: flex; }
+  .modal {
+    background: var(--panel);
+    border-radius: 8px;
+    padding: 20px 24px;
+    max-width: 420px;
+    border: 1px solid var(--border);
+  }
+  .modal h2 { margin: 0 0 12px; font-size: 16px; font-weight: 500; }
+  .modal p { color: var(--text-dim); margin: 0 0 16px; line-height: 1.5; }
+  .modal .actions { display: flex; gap: 8px; justify-content: flex-end; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>MIDI Turtle</h1>
+  <div class="sub">Sketch in graphite. Wash and accent in color. Tap sustain to drop a paint splash.</div>
+
+  <div class="toolbar">
+    <button id="midi-btn" class="primary">Connect MIDI &amp; Audio</button>
+    <span id="midi-status" class="status">Not connected</span>
+    <span style="flex: 1;"></span>
+    <div class="format-selector">
+      <button class="format-btn active" data-format="16:9" title="Landscape 1200×675">16:9</button>
+      <button class="format-btn" data-format="1:1" title="Square 900×900">1:1</button>
+      <button class="format-btn" data-format="9:16" title="Portrait 675×1200">9:16</button>
+    </div>
+    <label class="checkbox-row"><input type="checkbox" id="sound-toggle" checked> Sound</label>
+  </div>
+
+  <div class="toolbar">
+    <div class="layer-selector">
+      <button class="layer-btn active" data-layer="sketch">Sketch</button>
+      <button class="layer-btn" data-layer="wash">Wash</button>
+      <button class="layer-btn" data-layer="accent">Accent</button>
+    </div>
+    <span style="flex: 1;"></span>
+    <button id="splash-btn">Splash (Sustain)</button>
+    <button id="undo-btn" disabled>Undo</button>
+    <button id="penlift-btn"><span id="penlift-label">Lift pen</span></button>
+    <button id="clear-btn">Clear</button>
+    <select id="export-mode" title="What to include in export">
+      <option value="full" selected>Full composite</option>
+      <option value="color">Color only (no sketch)</option>
+      <option value="sketch">Sketch only</option>
+      <option value="transparent">Transparent (no paper)</option>
+    </select>
+    <label class="checkbox-row"><input type="checkbox" id="export-2x"> 2× scale</label>
+    <button id="save-btn">Save PNG</button>
+  </div>
+
+  <div class="toolbar" style="background: var(--panel); padding: 10px; border-radius: 8px;">
+    <div class="slider-group">
+      <label>Brush size</label>
+      <input type="range" id="brush-slider" min="0" max="127" value="64">
+      <span id="brush-value" style="min-width: 30px; text-align: right;">1.0×</span>
+    </div>
+    <div class="slider-group">
+      <label>Color mode</label>
+      <select id="color-mode" style="background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px;">
+        <option value="manual" selected>Manual hue</option>
+        <option value="pitch">Follow pitch</option>
+      </select>
+    </div>
+    <div class="slider-group" id="hue-group">
+      <label>Hue</label>
+      <input type="range" class="hue-slider" id="hue-slider" min="0" max="127" value="40">
+      <span class="color-swatch" id="hue-swatch" style="background: hsl(110, 70%, 50%);"></span>
+    </div>
+    <div class="slider-group">
+      <label>Splash messiness</label>
+      <input type="range" id="mess-slider" min="0" max="127" value="64">
+      <span id="mess-value" style="min-width: 30px; text-align: right;">50%</span>
+    </div>
+  </div>
+
+  <div class="readouts">
+    <div class="readout layer-active" id="layer-readout-card">
+      <div class="label">Layer</div>
+      <div class="value" id="layer-readout">Sketch</div>
+    </div>
+    <div class="readout"><div class="label">Format</div><div class="value" id="format-readout">16:9</div></div>
+    <div class="readout"><div class="label">Brush</div><div class="value" id="brush-readout">1.0×</div></div>
+    <div class="readout"><div class="label">Color</div><div class="value"><span class="color-swatch" id="color-readout-swatch"></span><span id="color-readout">—</span></div></div>
+    <div class="readout"><div class="label">Speed</div><div class="value" id="speed-readout">0</div></div>
+    <div class="readout"><div class="label">Pen</div><div class="value" id="pen-readout">Down</div></div>
+    <div class="readout"><div class="label">Note</div><div class="value" id="note-readout">—</div></div>
+  </div>
+
+  <div class="canvas-wrap">
+    <div class="canvas-stack" id="canvas-stack">
+      <canvas id="paper-canvas" class="layer"></canvas>
+      <canvas id="sketch-canvas" class="layer"></canvas>
+      <canvas id="wash-canvas" class="layer"></canvas>
+      <canvas id="accent-canvas" class="layer"></canvas>
+      <canvas id="overlay" class="layer"></canvas>
+      <div class="layer-badge" id="layer-badge"><span class="dot" style="background:#888"></span>Sketch</div>
+    </div>
+  </div>
+
+  <div class="info">
+    <h3>How layers work</h3>
+    <div class="mappings">
+      <div><strong>Sketch layer</strong> — pure graphite, dampens splashes</div>
+      <div><strong>Wash layer</strong> — soft watercolor, builds with passes</div>
+      <div><strong>Accent layer</strong> — bold opaque color marks</div>
+      <div><strong>Sustain pedal (CC64)</strong> — drop a paint splash at the cursor</div>
+      <div><strong>CC7</strong> — layer: &lt;43 sketch · 43–85 wash · &gt;85 accent</div>
+      <div><strong>CC74</strong> — brush size (also sets splash size)</div>
+      <div><strong>CC71</strong> — manual hue</div>
+      <div><strong>CC73</strong> — splash messiness</div>
+    </div>
+    <div class="keyboard-hint">
+      Steering: white keys turn right · black keys turn left · distance from middle C = sharpness · higher pitch = faster
+    </div>
+    <div class="keyboard-hint" style="margin-top: 4px; padding-top: 0; border: 0;">
+      No MIDI? A–L play notes · ←/→ steer · ↑/↓ speed · Z/X/C switch layer · -/+ brush · F = splash · U = undo · B = pen toggle
+    </div>
+
+    <details>
+      <summary>Tuning &amp; debug</summary>
+      <div id="cc-monitor" class="cc-monitor" style="margin-top: 8px;">No MIDI activity yet…</div>
+      <div style="margin-top: 12px;">
+        <div class="control-row"><label>Layer select CC</label><input type="number" id="cc-layer" value="7" min="0" max="127"></div>
+        <div class="control-row"><label>Brush size CC</label><input type="number" id="cc-brush" value="74" min="0" max="127"></div>
+        <div class="control-row"><label>Hue CC</label><input type="number" id="cc-hue" value="71" min="0" max="127"></div>
+        <div class="control-row"><label>Messiness CC</label><input type="number" id="cc-mess" value="73" min="0" max="127"></div>
+        <div class="control-row">
+          <label>Reverse steering</label>
+          <label class="checkbox-row" style="min-width: auto;"><input type="checkbox" id="reverse-steer"> swap white/black turn direction</label>
+        </div>
+      </div>
+    </details>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="confirm-modal">
+  <div class="modal">
+    <h2>Change canvas format?</h2>
+    <p id="confirm-message">Switching format will clear your current artwork. Save your work first if you want to keep it.</p>
+    <div class="actions">
+      <button id="confirm-cancel">Cancel</button>
+      <button id="confirm-ok" class="primary">Clear &amp; switch</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  // ============================================================
+  // PHASE 1: declare data containers used by other functions
+  // (Must come before applyFormat() since it references these.)
+  // ============================================================
+  const activeSplashes = [];
+  const undoStack = [];
+  const MAX_UNDO = 10;
+
+  // State object — mutated throughout, but the object reference itself
+  // must exist before anything that touches it.
+  const state = {
+    x: 0, y: 0,
+    heading: 0,
+    targetTurnRate: 0, turnRate: 0,
+    targetSpeed: 0, speed: 0,
+    pressure: 0.6, penDown: true, tremor: 0,
+    trail: [],
+    activeNotes: [],
+    currentNote: null,
+    layer: 'sketch',
+    reverseSteer: false,
+    brushSize: 1.0,
+    manualHue: 110,
+    colorMode: 'manual',
+    messiness: 0.5,
+  };
+
+  // ============================================================
+  // Canvas references and contexts (re-acquired on resize)
+  // ============================================================
+  const paperEl = document.getElementById('paper-canvas');
+  const sketchEl = document.getElementById('sketch-canvas');
+  const washEl = document.getElementById('wash-canvas');
+  const accentEl = document.getElementById('accent-canvas');
+  const overlay = document.getElementById('overlay');
+  const canvasStack = document.getElementById('canvas-stack');
+
+  let pctx_main = paperEl.getContext('2d');
+  let sctx = sketchEl.getContext('2d');
+  let wctx = washEl.getContext('2d');
+  let actx = accentEl.getContext('2d');
+  let octx = overlay.getContext('2d');
+
+  const FORMATS = {
+    '16:9': { w: 1200, h: 675,  maxCssWidth: 1200 },
+    '1:1':  { w: 900,  h: 900,  maxCssWidth: 900  },
+    '9:16': { w: 675,  h: 1200, maxCssWidth: 540  },
+  };
+  let currentFormat = '16:9';
+  let W = FORMATS[currentFormat].w;
+  let H = FORMATS[currentFormat].h;
+
+  let paperTex = null;
+  let paperImg = null;
+
+  function buildPaperTexture() {
+    paperTex = document.createElement('canvas');
+    paperTex.width = W; paperTex.height = H;
+    const ptctx = paperTex.getContext('2d');
+    ptctx.fillStyle = '#f4f0e6';
+    ptctx.fillRect(0, 0, W, H);
+    const id = ptctx.getImageData(0, 0, W, H);
+    const d = id.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const n = (Math.random() - 0.5) * 18;
+      d[i]   = Math.max(0, Math.min(255, d[i]   + n));
+      d[i+1] = Math.max(0, Math.min(255, d[i+1] + n));
+      d[i+2] = Math.max(0, Math.min(255, d[i+2] + n - 2));
+    }
+    ptctx.putImageData(id, 0, 0);
+    const fiberCount = Math.round(400 * (W * H) / (1200 * 675));
+    for (let i = 0; i < fiberCount; i++) {
+      ptctx.strokeStyle = `rgba(120,110,90,${Math.random() * 0.04 + 0.01})`;
+      ptctx.lineWidth = Math.random() * 0.6 + 0.2;
+      ptctx.beginPath();
+      const x = Math.random() * W, y = Math.random() * H;
+      const len = Math.random() * 30 + 10;
+      const ang = Math.random() * Math.PI * 2;
+      ptctx.moveTo(x, y);
+      ptctx.lineTo(x + Math.cos(ang) * len, y + Math.sin(ang) * len);
+      ptctx.stroke();
+    }
+    paperImg = ptctx.getImageData(0, 0, W, H);
+  }
+
+  function paintPaper() { pctx_main.drawImage(paperTex, 0, 0); }
+
+  function applyFormat(formatKey) {
+    const fmt = FORMATS[formatKey];
+    currentFormat = formatKey;
+    W = fmt.w; H = fmt.h;
+
+    [paperEl, sketchEl, washEl, accentEl, overlay].forEach(c => {
+      c.width = W; c.height = H;
+    });
+    pctx_main = paperEl.getContext('2d');
+    sctx = sketchEl.getContext('2d');
+    wctx = washEl.getContext('2d');
+    actx = accentEl.getContext('2d');
+    octx = overlay.getContext('2d');
+
+    canvasStack.style.aspectRatio = (W + ' / ' + H);
+    canvasStack.style.width = '100%';
+    canvasStack.style.maxWidth = fmt.maxCssWidth + 'px';
+
+    buildPaperTexture();
+    paintPaper();
+    sctx.clearRect(0, 0, W, H);
+    wctx.clearRect(0, 0, W, H);
+    actx.clearRect(0, 0, W, H);
+    activeSplashes.length = 0;
+    undoStack.length = 0;
+    sketchSnapshotDirty = true;
+    updateUndoButton();
+
+    state.x = W / 2; state.y = H / 2;
+    state.heading = 0;
+    state.trail = [];
+
+    document.querySelectorAll('.format-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.format === formatKey);
+    });
+    const formatReadoutEl = document.getElementById('format-readout');
+    if (formatReadoutEl) formatReadoutEl.textContent = formatKey;
+  }
+
+  function hasArtwork() {
+    for (const ctx of [sctx, wctx, actx]) {
+      try {
+        const id = ctx.getImageData(0, 0, W, H);
+        const data = id.data;
+        const stride = Math.max(4, Math.floor(data.length / 4 / 1000) * 4);
+        for (let i = 3; i < data.length; i += stride) {
+          if (data[i] > 0) return true;
+        }
+      } catch (e) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Confirm modal
+  const confirmModal = document.getElementById('confirm-modal');
+  const confirmMessage = document.getElementById('confirm-message');
+  let confirmCallback = null;
+
+  function showConfirm(message, onOk) {
+    confirmMessage.textContent = message;
+    confirmCallback = onOk;
+    confirmModal.classList.add('show');
+  }
+
+  document.getElementById('confirm-cancel').addEventListener('click', () => {
+    confirmModal.classList.remove('show');
+    confirmCallback = null;
+  });
+  document.getElementById('confirm-ok').addEventListener('click', () => {
+    confirmModal.classList.remove('show');
+    if (confirmCallback) confirmCallback();
+    confirmCallback = null;
+  });
+
+  document.querySelectorAll('.format-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = btn.dataset.format;
+      if (target === currentFormat) return;
+      const performSwitch = () => applyFormat(target);
+      if (hasArtwork()) {
+        showConfirm(
+          `Switch to ${target}? Your current artwork will be cleared. Save first if you want to keep it.`,
+          performSwitch
+        );
+      } else {
+        performSwitch();
+      }
+    });
+  });
+
+  function clearAllLayers() {
+    paintPaper();
+    sctx.clearRect(0, 0, W, H);
+    wctx.clearRect(0, 0, W, H);
+    actx.clearRect(0, 0, W, H);
+    activeSplashes.length = 0;
+    undoStack.length = 0;
+    sketchSnapshotDirty = true;
+    updateUndoButton();
+  }
+
+  // Undo helpers (declared early so applyFormat can call updateUndoButton)
+  function snapshotLayer(targetCtx) {
+    const snap = document.createElement('canvas');
+    snap.width = W; snap.height = H;
+    snap.getContext('2d').drawImage(targetCtx.canvas, 0, 0);
+    return snap;
+  }
+
+  function pushUndo(layerName) {
+    const targetCtx = layerName === 'wash' ? wctx : actx;
+    const snap = snapshotLayer(targetCtx);
+    undoStack.push({ layer: layerName, snap });
+    if (undoStack.length > MAX_UNDO) undoStack.shift();
+    updateUndoButton();
+  }
+
+  function updateUndoButton() {
+    const btn = document.getElementById('undo-btn');
+    if (!btn) return;
+    btn.disabled = undoStack.length === 0;
+    btn.textContent = undoStack.length > 0 ? `Undo (${undoStack.length})` : 'Undo';
+  }
+
+  function performUndo() {
+    const last = undoStack.pop();
+    if (!last) return;
+    const targetCtx = last.layer === 'wash' ? wctx : actx;
+    targetCtx.clearRect(0, 0, W, H);
+    targetCtx.drawImage(last.snap, 0, 0);
+    updateUndoButton();
+  }
+
+  // Sketch snapshot for splash damping (declared early so applyFormat can clear it)
+  let sketchSnapshot = null;
+  let sketchSnapshotDirty = true;
+
+  // Apply initial format now that all required functions exist
+  applyFormat('16:9');
+
+  // ============================================================
+  // PHASE 2: audio engine
+  // ============================================================
+  let audioCtx = null;
+  let masterGain = null;
+  const activeVoices = new Map();
+  let soundEnabled = true;
+
+  function initAudio() {
+    if (audioCtx) return;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.4;
+    const reverbConvolver = audioCtx.createConvolver();
+    const irLength = audioCtx.sampleRate * 1.6;
+    const ir = audioCtx.createBuffer(2, irLength, audioCtx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const data = ir.getChannelData(ch);
+      for (let i = 0; i < irLength; i++) {
+        const decay = Math.pow(1 - i / irLength, 2.5);
+        data[i] = (Math.random() * 2 - 1) * decay * 0.5;
+      }
+    }
+    reverbConvolver.buffer = ir;
+    const reverbGain = audioCtx.createGain(); reverbGain.gain.value = 0.18;
+    const dryGain = audioCtx.createGain(); dryGain.gain.value = 1.0;
+    masterGain.connect(audioCtx.destination);
+    dryGain.connect(masterGain);
+    reverbGain.connect(masterGain);
+    reverbConvolver.connect(reverbGain);
+    audioCtx._dryBus = dryGain;
+    audioCtx._wetBus = reverbConvolver;
+  }
+
+  function midiToFreq(note) { return 440 * Math.pow(2, (note - 69) / 12); }
+
+  function playNote(note, velocity) {
+    if (!audioCtx || !soundEnabled) return;
+    stopNote(note);
+    const freq = midiToFreq(note);
+    const vel = velocity / 127;
+    const now = audioCtx.currentTime;
+    const voice = audioCtx.createGain();
+    voice.gain.setValueAtTime(0, now);
+    voice.gain.linearRampToValueAtTime(vel * 0.35, now + 0.008);
+    voice.gain.exponentialRampToValueAtTime(vel * 0.12, now + 0.4);
+    voice.gain.exponentialRampToValueAtTime(0.001, now + 4.0);
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(2000 + vel * 3000, now);
+    filter.frequency.exponentialRampToValueAtTime(800, now + 2.5);
+    filter.Q.value = 0.5;
+    const osc1 = audioCtx.createOscillator();
+    osc1.type = 'triangle'; osc1.frequency.value = freq;
+    const g1 = audioCtx.createGain(); g1.gain.value = 0.6;
+    osc1.connect(g1).connect(filter);
+    const osc2 = audioCtx.createOscillator();
+    osc2.type = 'sine'; osc2.frequency.value = freq * 2;
+    const g2 = audioCtx.createGain(); g2.gain.value = 0.18;
+    osc2.connect(g2).connect(filter);
+    const osc3 = audioCtx.createOscillator();
+    osc3.type = 'sine'; osc3.frequency.value = freq * 1.005;
+    const g3 = audioCtx.createGain(); g3.gain.value = 0.25;
+    osc3.connect(g3).connect(filter);
+    filter.connect(voice);
+    voice.connect(audioCtx._dryBus);
+    voice.connect(audioCtx._wetBus);
+    osc1.start(now); osc2.start(now); osc3.start(now);
+    activeVoices.set(note, { oscs: [osc1, osc2, osc3], gain: voice });
+  }
+
+  function stopNote(note) {
+    const voice = activeVoices.get(note);
+    if (!voice || !audioCtx) return;
+    const now = audioCtx.currentTime;
+    try {
+      voice.gain.gain.cancelScheduledValues(now);
+      voice.gain.gain.setValueAtTime(voice.gain.gain.value, now);
+      voice.gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+      voice.oscs.forEach(o => o.stop(now + 0.7));
+    } catch (e) {}
+    activeVoices.delete(note);
+  }
+
+  // ============================================================
+  // PHASE 3: CC mappings and slider wiring
+  // ============================================================
+  const ccMap = { layer: 7, brush: 74, hue: 71, mess: 73 };
+
+  document.getElementById('cc-layer').addEventListener('input', e => ccMap.layer = parseInt(e.target.value) || 0);
+  document.getElementById('cc-brush').addEventListener('input', e => ccMap.brush = parseInt(e.target.value) || 0);
+  document.getElementById('cc-hue').addEventListener('input', e => ccMap.hue = parseInt(e.target.value) || 0);
+  document.getElementById('cc-mess').addEventListener('input', e => ccMap.mess = parseInt(e.target.value) || 0);
+  document.getElementById('reverse-steer').addEventListener('change', e => state.reverseSteer = e.target.checked);
+  document.getElementById('sound-toggle').addEventListener('change', e => {
+    soundEnabled = e.target.checked;
+    if (!soundEnabled) activeVoices.forEach((_, note) => stopNote(note));
+  });
+
+  const brushSlider = document.getElementById('brush-slider');
+  const hueSlider = document.getElementById('hue-slider');
+  const messSlider = document.getElementById('mess-slider');
+  const messValue = document.getElementById('mess-value');
+  const colorModeSelect = document.getElementById('color-mode');
+  const hueGroup = document.getElementById('hue-group');
+
+  function ccToBrushSize(v) {
+    const t = v / 127;
+    return 0.3 + Math.pow(t, 1.4) * 3.7;
+  }
+  function ccToHue(v) { return (v / 127) * 360; }
+  function ccToMess(v) { return v / 127; }
+
+  function setBrushFromCC(v) {
+    state.brushSize = ccToBrushSize(v);
+    brushSlider.value = v;
+    updateBrushReadouts();
+  }
+  function setHueFromCC(v) {
+    state.manualHue = ccToHue(v);
+    hueSlider.value = v;
+    updateColorReadouts();
+  }
+  function setMessFromCC(v) {
+    state.messiness = ccToMess(v);
+    messSlider.value = v;
+    messValue.textContent = Math.round(state.messiness * 100) + '%';
+  }
+  function setColorMode(mode) {
+    state.colorMode = mode;
+    colorModeSelect.value = mode;
+    hueGroup.style.opacity = mode === 'manual' ? '1' : '0.4';
+    updateColorReadouts();
+  }
+
+  brushSlider.addEventListener('input', e => setBrushFromCC(parseInt(e.target.value)));
+  hueSlider.addEventListener('input', e => setHueFromCC(parseInt(e.target.value)));
+  messSlider.addEventListener('input', e => setMessFromCC(parseInt(e.target.value)));
+  colorModeSelect.addEventListener('change', e => setColorMode(e.target.value));
+
+  document.querySelectorAll('.layer-btn').forEach(btn => {
+    btn.addEventListener('click', () => setLayer(btn.dataset.layer));
+  });
+
+  function setLayer(name) {
+    if (state.layer === name) return;
+    state.layer = name;
+    document.querySelectorAll('.layer-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.layer === name);
+    });
+    updateLayerBadge();
+    updateColorReadouts();
+  }
+
+  // ============================================================
+  // PHASE 4: readouts
+  // ============================================================
+  const speedReadout = document.getElementById('speed-readout');
+  const layerReadout = document.getElementById('layer-readout');
+  const penReadout = document.getElementById('pen-readout');
+  const noteReadout = document.getElementById('note-readout');
+  const brushReadout = document.getElementById('brush-readout');
+  const brushValue = document.getElementById('brush-value');
+  const colorReadout = document.getElementById('color-readout');
+  const colorReadoutSwatch = document.getElementById('color-readout-swatch');
+  const hueSwatch = document.getElementById('hue-swatch');
+  const penLiftLabel = document.getElementById('penlift-label');
+  const layerBadge = document.getElementById('layer-badge');
+
+  const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  const BLACK_KEYS = new Set([1, 3, 6, 8, 10]);
+  function noteToName(n) { return NOTE_NAMES[n % 12] + (Math.floor(n / 12) - 1); }
+  function isBlackKey(note) { return BLACK_KEYS.has(note % 12); }
+
+  const LAYER_INFO = {
+    sketch: { name: 'Sketch', color: '#888' },
+    wash:   { name: 'Wash',   color: '#7eb09e' },
+    accent: { name: 'Accent', color: '#e07a5f' },
+  };
+
+  function updateLayerBadge() {
+    const info = LAYER_INFO[state.layer];
+    layerBadge.innerHTML = `<span class="dot" style="background:${info.color}"></span>${info.name}`;
+    layerReadout.textContent = info.name;
+  }
+
+  function updateBrushReadouts() {
+    const txt = state.brushSize.toFixed(1) + '×';
+    brushReadout.textContent = txt;
+    brushValue.textContent = txt;
+  }
+
+  function updateColorReadouts() {
+    if (state.layer === 'sketch') {
+      colorReadout.textContent = 'graphite';
+      colorReadoutSwatch.style.background = '#444';
+    } else if (state.colorMode === 'pitch') {
+      colorReadout.textContent = state.currentNote != null ? 'pitch' : 'pitch (—)';
+      const hue = state.currentNote != null ? pitchToHue(state.currentNote) : 0;
+      const sat = state.layer === 'wash' ? 38 : 78;
+      const light = state.layer === 'wash' ? 50 : 48;
+      colorReadoutSwatch.style.background = `hsl(${hue}, ${sat}%, ${light}%)`;
+    } else {
+      const sat = state.layer === 'wash' ? 38 : 78;
+      const light = state.layer === 'wash' ? 50 : 48;
+      colorReadoutSwatch.style.background = `hsl(${state.manualHue}, ${sat}%, ${light}%)`;
+      colorReadout.textContent = Math.round(state.manualHue) + '°';
+    }
+    hueSwatch.style.background = `hsl(${state.manualHue}, 70%, 50%)`;
+  }
+
+  function updateReadouts() {
+    speedReadout.textContent = Math.round(state.speed);
+    penReadout.textContent = state.penDown ? 'Down' : 'Up';
+    penLiftLabel.textContent = state.penDown ? 'Lift pen' : 'Lower pen';
+    noteReadout.textContent = state.currentNote != null ? noteToName(state.currentNote) : '—';
+  }
+
+  // Initialize all readouts now that DOM refs exist
+  updateLayerBadge();
+  updateReadouts();
+  updateColorReadouts();
+  setBrushFromCC(64);
+  setHueFromCC(40);
+  setMessFromCC(64);
+  setColorMode('manual');
+
+  // ============================================================
+  // PHASE 5: drawing helpers
+  // ============================================================
+  function pressureCurve(p) { return Math.pow(Math.max(0, Math.min(1, p)), 1.5); }
+
+  function pitchToHue(note) {
+    const lo = 36, hi = 96;
+    const t = Math.max(0, Math.min(1, (note - lo) / (hi - lo)));
+    return 10 + t * 280;
+  }
+
+  function getCurrentHue() {
+    if (state.colorMode === 'pitch') {
+      if (state.currentNote == null) return 200;
+      return pitchToHue(state.currentNote);
+    }
+    return state.manualHue;
+  }
+
+  function washColor(alpha) {
+    return `hsla(${getCurrentHue()}, 38%, 50%, ${alpha})`;
+  }
+  function accentColor(alpha) {
+    return `hsla(${getCurrentHue()}, 78%, 48%, ${alpha})`;
+  }
+
+  function drawSketchSegment(x0, y0, x1, y1, p) {
+    const dx = x1 - x0, dy = y1 - y0;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 0.3) return;
+    const steps = Math.max(2, Math.ceil(dist * 1.4));
+    const pCurved = pressureCurve(p);
+    const sizeMul = state.brushSize;
+
+    for (let i = 0; i < steps; i++) {
+      const t = i / steps;
+      const x = x0 + dx * t;
+      const y = y0 + dy * t;
+      const radius = (2.5 + pCurved * 5) * sizeMul;
+      const dotCount = Math.max(4, Math.ceil(4 * sizeMul));
+
+      for (let d = 0; d < dotCount; d++) {
+        const angle = Math.random() * Math.PI * 2;
+        const r = Math.random() * radius;
+        const px = x + Math.cos(angle) * r;
+        const py = y + Math.sin(angle) * r;
+        if (px < 0 || py < 0 || px >= W || py >= H) continue;
+
+        const idx = ((py | 0) * W + (px | 0)) * 4;
+        const paperLum = (paperImg.data[idx] + paperImg.data[idx+1] + paperImg.data[idx+2]) / 3;
+        const catchFactor = 0.7 + (paperLum / 255) * 0.6;
+        const opacity = 0.32 * pCurved * catchFactor * (Math.random() * 0.5 + 0.5);
+        const dotSize = 0.9 * (Math.random() * 0.7 + 0.6) * Math.sqrt(sizeMul);
+
+        sctx.fillStyle = `rgba(40, 38, 36, ${opacity})`;
+        sctx.beginPath();
+        sctx.arc(px, py, dotSize, 0, Math.PI * 2);
+        sctx.fill();
+      }
+    }
+  }
+
+  function drawWashSegment(x0, y0, x1, y1, p) {
+    const dx = x1 - x0, dy = y1 - y0;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 0.3) return;
+    const sizeMul = state.brushSize;
+    const steps = Math.max(2, Math.ceil(dist * 0.8 / Math.max(1, Math.sqrt(sizeMul))));
+    const pCurved = pressureCurve(p);
+
+    wctx.globalCompositeOperation = 'source-over';
+    for (let i = 0; i < steps; i++) {
+      const t = i / steps;
+      const x = x0 + dx * t;
+      const y = y0 + dy * t;
+      const radius = (12 + pCurved * 28) * sizeMul;
+
+      const dotCount = Math.max(4, Math.ceil(6 * Math.sqrt(sizeMul)));
+      for (let d = 0; d < dotCount; d++) {
+        const angle = Math.random() * Math.PI * 2;
+        const r = Math.random() * radius * 0.7;
+        const px = x + Math.cos(angle) * r;
+        const py = y + Math.sin(angle) * r;
+        if (px < -50 || py < -50 || px >= W + 50 || py >= H + 50) continue;
+
+        const blobSize = radius * (Math.random() * 0.5 + 0.4);
+        const grad = wctx.createRadialGradient(px, py, 0, px, py, blobSize);
+        const baseAlpha = 0.06 * pCurved * (Math.random() * 0.6 + 0.6);
+        grad.addColorStop(0, washColor(baseAlpha));
+        grad.addColorStop(0.6, washColor(baseAlpha * 0.5));
+        grad.addColorStop(1, washColor(0));
+        wctx.fillStyle = grad;
+        wctx.beginPath();
+        wctx.arc(px, py, blobSize, 0, Math.PI * 2);
+        wctx.fill();
+      }
+    }
+  }
+
+  function drawAccentSegment(x0, y0, x1, y1, p) {
+    const dx = x1 - x0, dy = y1 - y0;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 0.3) return;
+    const sizeMul = state.brushSize;
+    const steps = Math.max(2, Math.ceil(dist * 1.2));
+    const pCurved = pressureCurve(p);
+
+    for (let i = 0; i < steps; i++) {
+      const t = i / steps;
+      const x = x0 + dx * t;
+      const y = y0 + dy * t;
+      const radius = (4 + pCurved * 9) * sizeMul;
+      const dotCount = Math.max(4, Math.ceil(5 * Math.sqrt(sizeMul)));
+
+      for (let d = 0; d < dotCount; d++) {
+        const angle = Math.random() * Math.PI * 2;
+        const r = Math.random() * radius * 0.8;
+        const px = x + Math.cos(angle) * r;
+        const py = y + Math.sin(angle) * r;
+        if (px < 0 || py < 0 || px >= W || py >= H) continue;
+
+        const opacity = 0.55 * pCurved * (Math.random() * 0.4 + 0.7);
+        const dotSize = 1.6 * (Math.random() * 0.5 + 0.7) * Math.sqrt(sizeMul);
+        actx.fillStyle = accentColor(opacity);
+        actx.beginPath();
+        actx.arc(px, py, dotSize, 0, Math.PI * 2);
+        actx.fill();
+      }
+    }
+  }
+
+  function drawSegment(x0, y0, x1, y1, p) {
+    if (state.layer === 'sketch') drawSketchSegment(x0, y0, x1, y1, p);
+    else if (state.layer === 'wash') drawWashSegment(x0, y0, x1, y1, p);
+    else if (state.layer === 'accent') drawAccentSegment(x0, y0, x1, y1, p);
+  }
+
+  // ============================================================
+  // PHASE 6: paint splash
+  // ============================================================
+  function refreshSketchSnapshot() {
+    try {
+      sketchSnapshot = sctx.getImageData(0, 0, W, H);
+      sketchSnapshotDirty = false;
+    } catch (e) { sketchSnapshot = null; }
+  }
+
+  function sketchDarknessAt(x, y) {
+    if (!sketchSnapshot) return 0;
+    const ix = x | 0, iy = y | 0;
+    if (ix < 0 || iy < 0 || ix >= W || iy >= H) return 0;
+    const idx = (iy * W + ix) * 4;
+    const a = sketchSnapshot.data[idx + 3] / 255;
+    const lum = (sketchSnapshot.data[idx] + sketchSnapshot.data[idx+1] + sketchSnapshot.data[idx+2]) / (3 * 255);
+    return a * (1 - lum);
+  }
+
+  function flashLayerBadge(msg) {
+    layerBadge.innerHTML = msg;
+    setTimeout(() => { updateLayerBadge(); }, 1200);
+  }
+
+  function spawnSplash() {
+    if (state.layer === 'sketch') {
+      flashLayerBadge('Switch to wash or accent to splash');
+      return;
+    }
+    pushUndo(state.layer);
+    if (sketchSnapshotDirty) refreshSketchSnapshot();
+
+    const layer = state.layer;
+    const cx = state.x, cy = state.y;
+    const hue = getCurrentHue();
+    const sizeMul = state.brushSize;
+    const mess = state.messiness;
+
+    const baseRadius = 35 * sizeMul;
+    const baseDropletCount = Math.round(28 + sizeMul * 35 + mess * 60);
+    const droplets = [];
+
+    const pooledCount = Math.round(baseDropletCount * 0.4);
+    for (let i = 0; i < pooledCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = Math.random() * baseRadius * 0.5;
+      droplets.push({
+        x: cx + Math.cos(angle) * r,
+        y: cy + Math.sin(angle) * r,
+        size: (3 + Math.random() * 8) * Math.sqrt(sizeMul),
+        delay: Math.random() * 80,
+        opacityMul: 0.7 + Math.random() * 0.4,
+        zone: 'pool',
+      });
+    }
+    const splatterCount = Math.round(baseDropletCount * 0.4);
+    for (let i = 0; i < splatterCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = baseRadius * (0.5 + Math.random() * 0.7);
+      droplets.push({
+        x: cx + Math.cos(angle) * r,
+        y: cy + Math.sin(angle) * r,
+        size: (1.5 + Math.random() * 6) * Math.sqrt(sizeMul),
+        delay: 80 + Math.random() * 350,
+        opacityMul: 0.5 + Math.random() * 0.4,
+        zone: 'splatter',
+      });
+    }
+    const strayCount = Math.round(baseDropletCount * 0.3 * mess);
+    for (let i = 0; i < strayCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = baseRadius * (1.0 + Math.random() * Math.random() * 2.5);
+      droplets.push({
+        x: cx + Math.cos(angle) * r,
+        y: cy + Math.sin(angle) * r,
+        size: (0.8 + Math.random() * 3) * Math.sqrt(sizeMul),
+        delay: 200 + Math.random() * 600,
+        opacityMul: 0.3 + Math.random() * 0.5,
+        zone: 'spray',
+      });
+    }
+    const tendrilCount = Math.round(2 + mess * 5);
+    for (let t = 0; t < tendrilCount; t++) {
+      const angle = Math.random() * Math.PI * 2;
+      const length = baseRadius * (0.6 + Math.random() * 1.5);
+      const dropletsInTendril = Math.round(4 + Math.random() * 8);
+      const startDelay = 50 + Math.random() * 200;
+      for (let i = 0; i < dropletsInTendril; i++) {
+        const t2 = i / dropletsInTendril;
+        const r = t2 * length;
+        const wobble = (Math.random() - 0.5) * 6;
+        const px = cx + Math.cos(angle) * r + Math.cos(angle + Math.PI/2) * wobble;
+        const py = cy + Math.sin(angle) * r + Math.sin(angle + Math.PI/2) * wobble;
+        droplets.push({
+          x: px,
+          y: py,
+          size: (2.5 - t2 * 1.5) * Math.sqrt(sizeMul) * (0.6 + Math.random() * 0.6),
+          delay: startDelay + i * 30 + Math.random() * 20,
+          opacityMul: 0.6 - t2 * 0.3,
+          zone: 'tendril',
+        });
+      }
+    }
+
+    activeSplashes.push({
+      droplets, startTime: performance.now(), hue, layer, done: false,
+    });
+  }
+
+  function renderDroplet(splash, droplet) {
+    const layer = splash.layer;
+    const targetCtx = layer === 'wash' ? wctx : actx;
+    const sketchDark = sketchDarknessAt(droplet.x, droplet.y);
+    const sketchDamp = 1 - sketchDark * 0.75;
+    const sat = layer === 'wash' ? 38 : 78;
+    const light = layer === 'wash' ? 50 : 48;
+
+    if (layer === 'wash') {
+      const grad = targetCtx.createRadialGradient(droplet.x, droplet.y, 0, droplet.x, droplet.y, droplet.size * 1.8);
+      const baseA = 0.18 * droplet.opacityMul * sketchDamp;
+      grad.addColorStop(0, `hsla(${splash.hue}, ${sat}%, ${light}%, ${baseA})`);
+      grad.addColorStop(0.5, `hsla(${splash.hue}, ${sat}%, ${light}%, ${baseA * 0.5})`);
+      grad.addColorStop(1, `hsla(${splash.hue}, ${sat}%, ${light}%, 0)`);
+      targetCtx.fillStyle = grad;
+      targetCtx.beginPath();
+      targetCtx.arc(droplet.x, droplet.y, droplet.size * 1.8, 0, Math.PI * 2);
+      targetCtx.fill();
+    } else {
+      const baseA = 0.55 * droplet.opacityMul * sketchDamp;
+      const grad = targetCtx.createRadialGradient(droplet.x, droplet.y, 0, droplet.x, droplet.y, droplet.size * 1.4);
+      grad.addColorStop(0, `hsla(${splash.hue}, ${sat}%, ${light}%, ${baseA})`);
+      grad.addColorStop(0.7, `hsla(${splash.hue}, ${sat}%, ${light}%, ${baseA * 0.7})`);
+      grad.addColorStop(1, `hsla(${splash.hue}, ${sat}%, ${light}%, 0)`);
+      targetCtx.fillStyle = grad;
+      targetCtx.beginPath();
+      targetCtx.arc(droplet.x, droplet.y, droplet.size * 1.4, 0, Math.PI * 2);
+      targetCtx.fill();
+      if (droplet.size > 1.5 && droplet.zone !== 'spray') {
+        targetCtx.fillStyle = `hsla(${splash.hue}, ${sat}%, ${light - 8}%, ${Math.min(0.85, baseA * 1.5)})`;
+        targetCtx.beginPath();
+        targetCtx.arc(droplet.x, droplet.y, droplet.size * 0.4, 0, Math.PI * 2);
+        targetCtx.fill();
+      }
+    }
+  }
+
+  function tickSplashes(now) {
+    if (activeSplashes.length === 0) return;
+    for (const splash of activeSplashes) {
+      const elapsed = now - splash.startTime;
+      let allDone = true;
+      for (let i = 0; i < splash.droplets.length; i++) {
+        const d = splash.droplets[i];
+        if (d.rendered) continue;
+        if (elapsed >= d.delay) {
+          renderDroplet(splash, d);
+          d.rendered = true;
+        } else {
+          allDone = false;
+        }
+      }
+      if (allDone) splash.done = true;
+    }
+    for (let i = activeSplashes.length - 1; i >= 0; i--) {
+      if (activeSplashes[i].done) activeSplashes.splice(i, 1);
+    }
+  }
+
+  function drawCursor() {
+    octx.clearRect(0, 0, W, H);
+    state.trail.forEach((pt, i) => {
+      const alpha = (i / state.trail.length) * 0.25;
+      octx.fillStyle = `rgba(107, 142, 255, ${alpha})`;
+      octx.beginPath();
+      octx.arc(pt.x, pt.y, 2, 0, Math.PI * 2);
+      octx.fill();
+    });
+
+    const cx = state.x, cy = state.y;
+    const size = 14;
+    const h = state.heading;
+    const layerColor = LAYER_INFO[state.layer].color;
+    octx.fillStyle = state.penDown ? layerColor + 'f0' : 'rgba(150, 150, 150, 0.6)';
+    octx.beginPath();
+    octx.moveTo(cx + Math.cos(h) * size, cy + Math.sin(h) * size);
+    octx.lineTo(cx + Math.cos(h + 2.5) * size * 0.6, cy + Math.sin(h + 2.5) * size * 0.6);
+    octx.lineTo(cx + Math.cos(h - 2.5) * size * 0.6, cy + Math.sin(h - 2.5) * size * 0.6);
+    octx.closePath();
+    octx.fill();
+
+    octx.fillStyle = state.penDown ? layerColor : 'rgba(150, 150, 150, 0.8)';
+    octx.beginPath();
+    octx.arc(cx, cy, 2.5, 0, Math.PI * 2);
+    octx.fill();
+
+    if (state.penDown && state.brushSize > 1.2) {
+      const baseR = state.layer === 'wash' ? 25 : (state.layer === 'accent' ? 8 : 5);
+      const ringR = baseR * state.brushSize;
+      octx.strokeStyle = layerColor + '40';
+      octx.lineWidth = 1;
+      octx.setLineDash([3, 3]);
+      octx.beginPath();
+      octx.arc(cx, cy, ringR, 0, Math.PI * 2);
+      octx.stroke();
+      octx.setLineDash([]);
+    }
+
+    if (activeSplashes.length > 0) {
+      const pulse = (Math.sin(performance.now() / 100) + 1) / 2;
+      octx.strokeStyle = `hsla(${getCurrentHue()}, 70%, 55%, ${0.3 + pulse * 0.4})`;
+      octx.lineWidth = 1.5;
+      octx.beginPath();
+      octx.arc(cx, cy, 14 + pulse * 4, 0, Math.PI * 2);
+      octx.stroke();
+    }
+  }
+
+  // ============================================================
+  // PHASE 7: notes -> motion
+  // ============================================================
+  function noteToSpeed(note, velocity) {
+    const lo = 36, hi = 96;
+    const clamped = Math.max(lo, Math.min(hi, note));
+    const t = (clamped - lo) / (hi - lo);
+    const baseSpeed = 50 + t * 450;
+    const velScale = 0.4 + (velocity / 127) * 0.6;
+    return baseSpeed * velScale;
+  }
+
+  function noteToTurnRate(note) {
+    const middleC = 60;
+    const distance = Math.abs(note - middleC);
+    const sharpness = Math.min(1, distance / 36);
+    const magnitude = 0.4 + sharpness * 3.0;
+    const sign = isBlackKey(note) ? -1 : 1;
+    return magnitude * sign * (state.reverseSteer ? -1 : 1);
+  }
+
+  function updateFromNotes() {
+    if (state.activeNotes.length === 0) {
+      state.targetSpeed = 0;
+      state.targetTurnRate = 0;
+      state.currentNote = null;
+    } else {
+      const top = state.activeNotes[state.activeNotes.length - 1];
+      state.targetSpeed = noteToSpeed(top.note, top.velocity);
+      state.targetTurnRate = noteToTurnRate(top.note);
+      state.currentNote = top.note;
+      state.pressure = 0.3 + (top.velocity / 127) * 0.6;
+    }
+    if (state.colorMode === 'pitch') updateColorReadouts();
+  }
+
+  // ============================================================
+  // PHASE 8: main loop
+  // ============================================================
+  let lastTime = performance.now();
+  function tick(now) {
+    const dt = Math.min(0.05, (now - lastTime) / 1000);
+    lastTime = now;
+
+    const speedDiff = state.targetSpeed - state.speed;
+    const speedRate = speedDiff > 0 ? 14 : 4;
+    state.speed += speedDiff * Math.min(1, speedRate * dt);
+
+    const turnDiff = state.targetTurnRate - state.turnRate;
+    state.turnRate += turnDiff * Math.min(1, 16 * dt);
+
+    state.heading += state.turnRate * dt;
+
+    if (state.speed > 0.5) {
+      let nx = state.x + Math.cos(state.heading) * state.speed * dt;
+      let ny = state.y + Math.sin(state.heading) * state.speed * dt;
+
+      if (state.tremor > 0.01) {
+        nx += (Math.random() - 0.5) * state.tremor * 6;
+        ny += (Math.random() - 0.5) * state.tremor * 6;
+      }
+
+      if (nx < 0) { nx = 0; state.heading = Math.PI - state.heading; }
+      if (nx > W) { nx = W; state.heading = Math.PI - state.heading; }
+      if (ny < 0) { ny = 0; state.heading = -state.heading; }
+      if (ny > H) { ny = H; state.heading = -state.heading; }
+
+      if (state.penDown) {
+        drawSegment(state.x, state.y, nx, ny, state.pressure);
+        if (state.layer === 'sketch') sketchSnapshotDirty = true;
+      }
+      state.x = nx;
+      state.y = ny;
+
+      state.trail.push({ x: state.x, y: state.y });
+      if (state.trail.length > 40) state.trail.shift();
+    }
+
+    tickSplashes(now);
+
+    drawCursor();
+    updateReadouts();
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  // ============================================================
+  // PHASE 9: MIDI
+  // ============================================================
+  const ccMonitor = document.getElementById('cc-monitor');
+  const ccActivity = {};
+  function logCC(cc, value) {
+    ccActivity[cc] = value;
+    const lines = Object.entries(ccActivity)
+      .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))
+      .map(([cc, v]) => `CC ${cc.padStart(3, ' ')} = ${String(v).padStart(3, ' ')}`)
+      .slice(-12);
+    ccMonitor.textContent = lines.join('\n');
+  }
+
+  function handleNoteOn(note, velocity) {
+    state.activeNotes = state.activeNotes.filter(n => n.note !== note);
+    state.activeNotes.push({ note, velocity });
+    updateFromNotes();
+    playNote(note, velocity);
+  }
+
+  function handleNoteOff(note) {
+    state.activeNotes = state.activeNotes.filter(n => n.note !== note);
+    updateFromNotes();
+    stopNote(note);
+  }
+
+  let sustainHeld = false;
+  function handleCC(cc, value) {
+    logCC(cc, value);
+    if (cc === ccMap.layer) {
+      if (value < 43) setLayer('sketch');
+      else if (value <= 85) setLayer('wash');
+      else setLayer('accent');
+    } else if (cc === ccMap.brush) {
+      setBrushFromCC(value);
+    } else if (cc === ccMap.hue) {
+      setHueFromCC(value);
+      if (state.colorMode !== 'manual') setColorMode('manual');
+    } else if (cc === ccMap.mess) {
+      setMessFromCC(value);
+    } else if (cc === 64) {
+      const isHeld = value >= 64;
+      if (isHeld && !sustainHeld) spawnSplash();
+      sustainHeld = isHeld;
+    }
+  }
+
+  function handlePitchBend(lsb, msb) {
+    const value = (msb << 7) | lsb;
+    const centered = (value - 8192) / 8192;
+    state.tremor = Math.abs(centered);
+  }
+
+  function onMIDIMessage(e) {
+    const [status, d1, d2] = e.data;
+    const cmd = status & 0xF0;
+    if (cmd === 0x90 && d2 > 0) handleNoteOn(d1, d2);
+    else if (cmd === 0x80 || (cmd === 0x90 && d2 === 0)) handleNoteOff(d1);
+    else if (cmd === 0xB0) handleCC(d1, d2);
+    else if (cmd === 0xE0) handlePitchBend(d1, d2);
+  }
+
+  let midiAccess = null;
+  const midiStatus = document.getElementById('midi-status');
+
+  function attachAllInputs() {
+    if (!midiAccess) return;
+    const inputs = Array.from(midiAccess.inputs.values());
+    inputs.forEach(input => { input.onmidimessage = onMIDIMessage; });
+    if (inputs.length === 0) {
+      midiStatus.textContent = 'No MIDI devices found';
+      midiStatus.className = 'status err';
+    } else {
+      midiStatus.textContent = `Connected: ${inputs.map(i => i.name).join(', ')}`;
+      midiStatus.className = 'status ok';
+    }
+  }
+
+  document.getElementById('midi-btn').addEventListener('click', async () => {
+    initAudio();
+    if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
+    if (!navigator.requestMIDIAccess) {
+      midiStatus.textContent = 'Web MIDI not supported (use Chrome/Edge)';
+      midiStatus.className = 'status err';
+      return;
+    }
+    try {
+      midiAccess = await navigator.requestMIDIAccess();
+      attachAllInputs();
+      midiAccess.onstatechange = attachAllInputs;
+    } catch (err) {
+      midiStatus.textContent = 'MIDI access denied: ' + err.message;
+      midiStatus.className = 'status err';
+    }
+  });
+
+  // ============================================================
+  // PHASE 10: keyboard fallback
+  // ============================================================
+  const KEYBOARD_NOTES = {
+    'a': 60, 'w': 61, 's': 62, 'e': 63, 'd': 64,
+    't': 66, 'g': 67, 'y': 68, 'h': 69,
+    'k': 72, 'o': 73, 'l': 74, 'p': 75, ';': 76,
+  };
+  const arrowKeys = { ArrowLeft: false, ArrowRight: false, ArrowUp: false, ArrowDown: false };
+  const heldKeys = new Set();
+
+  document.addEventListener('keydown', (e) => {
+    if (e.repeat) return;
+    if (e.key in arrowKeys) { arrowKeys[e.key] = true; e.preventDefault(); return; }
+    if (e.key.toLowerCase() === 'b') { state.penDown = !state.penDown; e.preventDefault(); return; }
+    if (e.key.toLowerCase() === 'z') { setLayer('sketch'); return; }
+    if (e.key.toLowerCase() === 'x') { setLayer('wash'); return; }
+    if (e.key.toLowerCase() === 'c') { setLayer('accent'); return; }
+    if (e.key.toLowerCase() === 'f') { spawnSplash(); return; }
+    if (e.key.toLowerCase() === 'u') { performUndo(); return; }
+    if (e.key === '-' || e.key === '_') {
+      const v = Math.max(0, parseInt(brushSlider.value) - 8);
+      setBrushFromCC(v); return;
+    }
+    if (e.key === '=' || e.key === '+') {
+      const v = Math.min(127, parseInt(brushSlider.value) + 8);
+      setBrushFromCC(v); return;
+    }
+
+    const lower = e.key.toLowerCase();
+    if (KEYBOARD_NOTES[lower] != null && !heldKeys.has(lower)) {
+      heldKeys.add(lower);
+      initAudio();
+      if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+      handleNoteOn(KEYBOARD_NOTES[lower], 90);
+    }
+  });
+
+  document.addEventListener('keyup', (e) => {
+    if (e.key in arrowKeys) arrowKeys[e.key] = false;
+    const lower = e.key.toLowerCase();
+    if (KEYBOARD_NOTES[lower] != null) {
+      heldKeys.delete(lower);
+      handleNoteOff(KEYBOARD_NOTES[lower]);
+    }
+  });
+
+  setInterval(() => {
+    if (arrowKeys.ArrowLeft || arrowKeys.ArrowRight) {
+      if (arrowKeys.ArrowLeft) state.targetTurnRate = -2.2;
+      else if (arrowKeys.ArrowRight) state.targetTurnRate = 2.2;
+    }
+    if (arrowKeys.ArrowUp) state.targetSpeed = Math.min(400, state.targetSpeed + 15);
+    if (arrowKeys.ArrowDown) state.targetSpeed = Math.max(0, state.targetSpeed - 15);
+  }, 30);
+
+  // ============================================================
+  // PHASE 11: button wiring
+  // ============================================================
+  document.getElementById('penlift-btn').addEventListener('click', () => {
+    state.penDown = !state.penDown;
+  });
+  document.getElementById('clear-btn').addEventListener('click', clearAllLayers);
+  document.getElementById('splash-btn').addEventListener('click', () => spawnSplash());
+  document.getElementById('undo-btn').addEventListener('click', performUndo);
+
+  function buildExportComposite(mode, scale) {
+    const outW = Math.round(W * scale);
+    const outH = Math.round(H * scale);
+    const out = document.createElement('canvas');
+    out.width = outW; out.height = outH;
+    const ctx = out.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
+    if (mode === 'full') {
+      ctx.drawImage(paperEl, 0, 0, outW, outH);
+      ctx.drawImage(sketchEl, 0, 0, outW, outH);
+      ctx.drawImage(washEl, 0, 0, outW, outH);
+      ctx.drawImage(accentEl, 0, 0, outW, outH);
+    } else if (mode === 'color') {
+      ctx.drawImage(paperEl, 0, 0, outW, outH);
+      ctx.drawImage(washEl, 0, 0, outW, outH);
+      ctx.drawImage(accentEl, 0, 0, outW, outH);
+    } else if (mode === 'sketch') {
+      ctx.drawImage(paperEl, 0, 0, outW, outH);
+      ctx.drawImage(sketchEl, 0, 0, outW, outH);
+    } else if (mode === 'transparent') {
+      ctx.drawImage(sketchEl, 0, 0, outW, outH);
+      ctx.drawImage(washEl, 0, 0, outW, outH);
+      ctx.drawImage(accentEl, 0, 0, outW, outH);
+    }
+    return out;
+  }
+
+  document.getElementById('save-btn').addEventListener('click', () => {
+    const mode = document.getElementById('export-mode').value;
+    const use2x = document.getElementById('export-2x').checked;
+    const scale = use2x ? 2 : 1;
+    const composite = buildExportComposite(mode, scale);
+
+    const formatTag = currentFormat.replace(':', 'x');
+    const modeTag = mode === 'full' ? '' : `-${mode}`;
+    const scaleTag = use2x ? '-2x' : '';
+    const filename = `midi-turtle-${formatTag}${modeTag}${scaleTag}.png`;
+
+    const link = document.createElement('a');
+    link.download = filename;
+    link.href = composite.toDataURL('image/png');
+    link.click();
+  });
+})();
+</script>
+</body>
+</html>

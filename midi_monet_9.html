@@ -1,0 +1,3956 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MIDI Monet — Performance Mode</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter+Tight:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0d;
+    --bg-2: #14141a;
+    --ink: #f0ebe1;
+    --ink-dim: #8a8478;
+    --line: #2a2730;
+    --accent: #d4a574;
+    --rec: #e64545;
+    --ok: #7ac74f;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter Tight', sans-serif;
+    font-weight: 300;
+    overflow: hidden;
+    height: 100vh;
+  }
+  /* Subtle film grain over everything */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 100;
+    opacity: 0.04;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence baseFrequency='0.9'/></filter><rect width='200' height='200' filter='url(%23n)' opacity='0.6'/></svg>");
+  }
+
+  .app {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    height: 100vh;
+  }
+  .app.fullscreen {
+    grid-template-columns: 1fr;
+  }
+  .app.fullscreen .sidebar {
+    display: none;
+  }
+  .app.fullscreen .stage {
+    padding: 0;
+  }
+  .app.fullscreen .canvas-wrap {
+    border: none;
+    box-shadow: none;
+  }
+  /* Auto-hide transport in full-screen — fade out when idle, fade in on mouse move */
+  .app.fullscreen .transport {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 280ms ease-out;
+  }
+  .app.fullscreen.cursor-active .transport {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  /* Hide cursor too when idle — gallery feel */
+  .app.fullscreen:not(.cursor-active) {
+    cursor: none;
+  }
+  .app.fullscreen:not(.cursor-active) .canvas-wrap {
+    cursor: none;
+  }
+
+  /* SIDEBAR */
+  .sidebar {
+    background: var(--bg-2);
+    border-right: 1px solid var(--line);
+    padding: 28px 24px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+  .brand {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 24px;
+  }
+  .brand .title {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 28px;
+    font-weight: 600;
+    font-style: italic;
+    letter-spacing: 0.5px;
+    line-height: 1;
+  }
+  .brand .sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 2.5px;
+    color: var(--ink-dim);
+    margin-top: 6px;
+  }
+
+  .group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .group-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--ink-dim);
+  }
+
+  .midi-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+  }
+  .midi-status .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--ink-dim);
+    transition: background 200ms;
+  }
+  .midi-status.connected .dot {
+    background: var(--ok);
+    box-shadow: 0 0 8px var(--ok);
+  }
+
+  button {
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--line);
+    padding: 9px 14px;
+    font-family: 'Inter Tight', sans-serif;
+    font-weight: 400;
+    font-size: 13px;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+    transition: all 150ms;
+    text-align: left;
+  }
+  button:hover {
+    border-color: var(--ink-dim);
+    background: rgba(255,255,255,0.02);
+  }
+  button.primary {
+    background: var(--accent);
+    color: #0a0a0d;
+    border-color: var(--accent);
+    font-weight: 500;
+  }
+  button.primary:hover {
+    background: #e0b888;
+  }
+  button.danger {
+    color: var(--rec);
+    border-color: rgba(230, 69, 69, 0.4);
+  }
+  button.danger:hover {
+    background: rgba(230, 69, 69, 0.08);
+    border-color: var(--rec);
+  }
+  button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  button:disabled:hover {
+    border-color: var(--line);
+    background: transparent;
+  }
+  button.icon-btn {
+    padding: 6px 10px;
+    font-size: 14px;
+    line-height: 1;
+    min-width: 32px;
+    text-align: center;
+  }
+
+  .seg {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    border: 1px solid var(--line);
+  }
+  .seg.three { grid-template-columns: 1fr 1fr 1fr; }
+  .seg.modes-grid {
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-auto-rows: minmax(0, 1fr);
+  }
+  .seg.modes-grid button {
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .seg.modes-grid button:nth-child(3n) { border-right: none; }
+  .seg.modes-grid button:nth-last-child(-n+3) { border-bottom: none; }
+
+  .patch-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    border: 1px solid var(--line);
+  }
+  .patch-grid button {
+    border: none;
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    padding: 9px 4px;
+    font-size: 11px;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--ink-dim);
+    background: transparent;
+    cursor: pointer;
+    transition: all 150ms;
+  }
+  .patch-grid button:nth-child(3n) { border-right: none; }
+  .patch-grid button:nth-last-child(-n+2) { border-bottom: none; }
+  .patch-grid button:hover { color: var(--ink); background: rgba(255,255,255,0.02); }
+  .patch-grid button.active { background: var(--accent); color: #0a0a0d; }
+
+  .shape-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    border: 1px solid var(--line);
+  }
+  .shape-grid button {
+    border: none;
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    padding: 8px 4px;
+    font-size: 10px;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--ink-dim);
+    background: transparent;
+    cursor: pointer;
+    transition: all 150ms;
+  }
+  .shape-grid button:nth-child(3n) { border-right: none; }
+  .shape-grid button[data-shape="firework"] {
+    grid-column: 1 / -1;
+    border-right: none;
+    border-bottom: none;
+  }
+  /* Remove bottom border from the row above firework (last 3 before it) */
+  .shape-grid button[data-shape="firework"] ~ * { border-bottom: none; } /* nothing after firework, but kept for safety */
+  .shape-grid button[data-shape="geometric"],
+  .shape-grid button[data-shape="dna"],
+  .shape-grid button[data-shape="comet"] { border-bottom: 1px solid var(--line); }
+  .shape-grid button:hover { color: var(--ink); background: rgba(255,255,255,0.02); }
+  .shape-grid button.active { background: var(--accent); color: #0a0a0d; }
+  #shapeGroup.disabled { opacity: 0.4; pointer-events: none; }
+
+  .cc-row {
+    display: flex;
+    justify-content: space-between;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 4px 0;
+  }
+  .cc-row .cc-name { color: var(--ink-dim); letter-spacing: 0.5px; }
+  .cc-row .cc-val { color: var(--ink); }
+  .cc-row.live .cc-val { color: var(--accent); }
+
+  .cc-mapping-hint {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-dim);
+    letter-spacing: 0.3px;
+    line-height: 1.5;
+    margin-bottom: 4px;
+  }
+  .cc-mapping {
+    border: 1px solid var(--line);
+    padding: 8px 10px;
+    margin-bottom: 4px;
+    transition: border-color 150ms;
+  }
+  .cc-mapping.learning {
+    border-color: var(--accent);
+    background: rgba(212, 165, 116, 0.06);
+    animation: cc-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes cc-pulse {
+    0%, 100% { background: rgba(212, 165, 116, 0.06); }
+    50% { background: rgba(212, 165, 116, 0.18); }
+  }
+  .cc-mapping.bound {
+    border-color: rgba(212, 165, 116, 0.45);
+  }
+  .cc-mapping-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+  .cc-target-name {
+    font-size: 12px;
+    color: var(--ink);
+  }
+  .cc-learn-btn {
+    padding: 3px 9px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--ink-dim);
+    background: transparent;
+    border: 1px solid var(--line);
+    cursor: pointer;
+    transition: all 150ms;
+  }
+  .cc-learn-btn:hover {
+    color: var(--ink);
+    border-color: var(--ink-dim);
+  }
+  .cc-learn-btn.learning {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  .cc-learn-btn.bound {
+    color: var(--accent);
+  }
+  .cc-mapping-status {
+    margin-top: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-dim);
+    letter-spacing: 0.5px;
+  }
+  .cc-mapping.bound .cc-mapping-status { color: var(--ink); }
+
+  .cam-preview-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    border: 1px solid var(--line);
+    overflow: hidden;
+    margin-top: 4px;
+  }
+  .cam-preview-wrap video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transform: scaleX(1);
+    transition: opacity 200ms;
+  }
+  .cam-preview-wrap.mirror video {
+    transform: scaleX(-1);
+  }
+  .cam-preview-wrap.off video { opacity: 0; }
+  .cam-preview-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--ink-dim);
+    pointer-events: none;
+  }
+  .cam-preview-wrap.on .cam-preview-empty { display: none; }
+  .aspect-hint {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-dim);
+    letter-spacing: 0.5px;
+    margin-top: 2px;
+  }
+  .slider-hint {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--ink-dim);
+    letter-spacing: 0.5px;
+    margin-top: 4px;
+    display: flex;
+    justify-content: space-between;
+    opacity: 0.7;
+  }
+  .seg button {
+    border: none;
+    border-right: 1px solid var(--line);
+    padding: 8px 6px;
+    font-size: 11px;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--ink-dim);
+  }
+  .seg button:last-child { border-right: none; }
+  .seg button.active {
+    background: var(--accent);
+    color: #0a0a0d;
+  }
+
+  .toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+  }
+  .toggle .name {
+    color: var(--ink);
+  }
+  .toggle .name .hint {
+    display: block;
+    font-size: 11px;
+    color: var(--ink-dim);
+    margin-top: 2px;
+  }
+  .switch {
+    position: relative;
+    width: 36px; height: 20px;
+    background: var(--line);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 150ms;
+    flex-shrink: 0;
+  }
+  .switch::after {
+    content: '';
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 16px; height: 16px;
+    background: var(--ink);
+    border-radius: 50%;
+    transition: transform 150ms;
+  }
+  .switch.on { background: var(--accent); }
+  .switch.on::after { transform: translateX(16px); background: #0a0a0d; }
+
+  .slider-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .slider-row .head {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+  }
+  .slider-row .val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
+  }
+  input[type="range"] {
+    -webkit-appearance: none;
+    width: 100%;
+    background: transparent;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 2px;
+    background: var(--line);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-top: -5px;
+    cursor: pointer;
+  }
+  input[type="range"]::-moz-range-track {
+    height: 2px;
+    background: var(--line);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: none;
+    cursor: pointer;
+  }
+
+  /* STAGE */
+  .stage {
+    position: relative;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+  }
+  .canvas-wrap {
+    position: relative;
+    background: #000;
+    border: 1px solid var(--line);
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.02),
+      0 30px 80px rgba(0,0,0,0.6);
+    overflow: hidden;
+    /* dimensions set inline by JS based on aspect ratio */
+  }
+  canvas#paint {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  /* HUD: top-left rec indicator + bottom branding overlay (drawn on canvas during export) */
+  .hud {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .rec-pill {
+    position: absolute;
+    top: 16px; left: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px 6px 10px;
+    background: rgba(10,10,13,0.7);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(230, 69, 69, 0.4);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--rec);
+    opacity: 0;
+    transition: opacity 200ms;
+  }
+  .rec-pill.live {
+    opacity: 1;
+  }
+  .rec-pill .blob {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--rec);
+    animation: pulse 1s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.85); }
+  }
+
+  .last-note {
+    position: absolute;
+    bottom: 16px; left: 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-dim);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.6;
+  }
+
+  /* TRANSPORT BAR */
+  .transport {
+    position: absolute;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(20, 20, 26, 0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--line);
+    padding: 10px 12px;
+    z-index: 5;
+    transition: bottom 250ms ease-out;
+  }
+  /* When the drum drawer is open, lift the transport above it */
+  .canvas-wrap:has(.drum-drawer.open) .transport {
+    bottom: 232px;
+  }
+  .transport button {
+    padding: 9px 16px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    text-align: center;
+  }
+  .transport .timer {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink);
+    min-width: 56px;
+    text-align: center;
+    padding: 0 8px;
+    border-left: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+    margin: 0 4px;
+  }
+  .transport .timer.live { color: var(--rec); }
+
+  /* DRUM DRAWER — slides up from bottom of canvas */
+  .drum-drawer {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(10, 10, 13, 0.92);
+    backdrop-filter: blur(14px);
+    border-top: 1px solid var(--line);
+    transition: transform 250ms ease-out;
+    z-index: 6;
+    transform: translateY(calc(100% - 32px)); /* show only handle by default */
+  }
+  .drum-drawer.open {
+    transform: translateY(0);
+  }
+  .drum-handle {
+    height: 32px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 16px;
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid var(--line);
+    background: rgba(20, 20, 26, 0.7);
+    transition: background 150ms;
+  }
+  .drum-handle:hover { background: rgba(28, 28, 36, 0.7); }
+  .drum-handle-icon {
+    font-size: 9px;
+    color: var(--ink-dim);
+    transition: transform 250ms;
+  }
+  .drum-drawer.open .drum-handle-icon {
+    transform: rotate(180deg);
+  }
+  .drum-handle-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--ink);
+  }
+  .drum-handle-status {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-dim);
+    margin-left: auto;
+    letter-spacing: 1px;
+  }
+  .drum-handle-status.live { color: var(--accent); }
+  .drum-body {
+    padding: 12px 16px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .drum-controls {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .drum-play-btn {
+    padding: 6px 14px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    background: var(--accent);
+    color: #0a0a0d;
+    border: 1px solid var(--accent);
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 150ms;
+  }
+  .drum-play-btn:hover { background: #e0b888; }
+  .drum-play-btn.playing {
+    background: transparent;
+    color: var(--accent);
+  }
+  .drum-tempo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    max-width: 280px;
+  }
+  .drum-tempo-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-dim);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .drum-tempo input[type="range"] { flex: 1; }
+  .drum-tempo-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--accent);
+    min-width: 28px;
+    text-align: right;
+  }
+  .drum-toggle-block { display: flex; }
+  .drum-toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--ink-dim);
+    cursor: pointer;
+  }
+  .drum-toggle-label input { accent-color: var(--accent); }
+  .drum-clear-btn {
+    padding: 5px 10px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--ink-dim);
+    background: transparent;
+    border: 1px solid var(--line);
+    cursor: pointer;
+  }
+  .drum-clear-btn:hover { color: var(--ink); border-color: var(--ink-dim); }
+
+  .drum-grid-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .drum-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .drum-row-label {
+    width: 50px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--ink-dim);
+  }
+  .drum-steps {
+    display: grid;
+    grid-template-columns: repeat(16, 1fr);
+    gap: 3px;
+    flex: 1;
+  }
+  .drum-step {
+    aspect-ratio: 1;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--line);
+    cursor: pointer;
+    transition: background 100ms;
+  }
+  .drum-step:hover { background: rgba(255, 255, 255, 0.1); }
+  .drum-step.on {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  /* Beat groupings: every 4th step has a slightly brighter outline */
+  .drum-step:nth-child(4n+1) { border-left: 1px solid rgba(212, 165, 116, 0.35); }
+  /* Current playhead: highlight active step */
+  .drum-step.current {
+    box-shadow: 0 0 0 2px var(--accent), 0 0 8px rgba(212, 165, 116, 0.5);
+  }
+
+  /* MODAL */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.75);
+    backdrop-filter: blur(6px);
+    z-index: 200;
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-backdrop.show { display: flex; }
+  .modal {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    padding: 36px 40px;
+    max-width: 480px;
+    width: 90%;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.8);
+  }
+  .modal h2 {
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic;
+    font-weight: 600;
+    font-size: 28px;
+    margin: 0 0 6px;
+  }
+  .modal .muted {
+    color: var(--ink-dim);
+    font-size: 13px;
+    margin: 0 0 20px;
+    line-height: 1.5;
+  }
+  .modal .progress {
+    height: 2px;
+    background: var(--line);
+    overflow: hidden;
+    margin: 16px 0;
+  }
+  .modal .progress .bar {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 150ms;
+  }
+  .export-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+  }
+  .export-buttons button { flex: 1; text-align: center; }
+  .modal .preview {
+    width: 100%;
+    margin: 16px 0;
+    border: 1px solid var(--line);
+    background: #000;
+  }
+
+  /* Empty state instructions on canvas */
+  .empty-state {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    color: var(--ink-dim);
+    text-align: center;
+    z-index: 1;
+    transition: opacity 600ms;
+  }
+  .empty-state.hidden { opacity: 0; }
+  .empty-state .glyph {
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic;
+    font-size: 64px;
+    color: var(--accent);
+    opacity: 0.3;
+    margin-bottom: 8px;
+  }
+  .empty-state .text {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+  }
+
+  /* Watermark overlay shown in exported clip */
+  .watermark {
+    position: absolute;
+    bottom: 14px; right: 16px;
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic;
+    font-size: 14px;
+    color: rgba(240, 235, 225, 0.5);
+    letter-spacing: 0.5px;
+    pointer-events: none;
+    z-index: 3;
+  }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--line); }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="title">MIDI Monet</div>
+      <div class="sub">Performance Mode · v1</div>
+    </div>
+
+    <div class="group">
+      <div class="group-label">MIDI Input</div>
+      <div class="midi-status" id="midiStatus">
+        <div class="dot"></div>
+        <div id="midiText">Not connected</div>
+      </div>
+      <button id="connectBtn">Connect MIDI</button>
+    </div>
+
+    <div class="group">
+      <div class="group-label">Format</div>
+      <div class="seg three" id="aspectSeg">
+        <button data-aspect="16:9" class="active">16:9</button>
+        <button data-aspect="1:1">1:1</button>
+        <button data-aspect="9:16">9:16</button>
+      </div>
+      <div class="aspect-hint" id="aspectHint">Landscape · IG feed (letterboxed)</div>
+    </div>
+
+    <div class="group">
+      <div class="group-label">Camera</div>
+      <div class="seg three" id="cameraModeSeg">
+        <button data-cam-mode="off" class="active">Off</button>
+        <button data-cam-mode="split">Split</button>
+        <button data-cam-mode="canvas">Canvas</button>
+      </div>
+      <div class="aspect-hint" id="camModeHint">Camera disabled</div>
+
+      <div id="camBlendGroup" style="display:none;">
+        <div class="group-label" style="margin-top:8px;">Paint blend</div>
+        <div class="seg three" id="camBlendSeg">
+          <button data-cam-blend="glow" class="active">Glow</button>
+          <button data-cam-blend="overlay">Overlay</button>
+          <button data-cam-blend="permanent">Permanent</button>
+        </div>
+      </div>
+
+      <div class="toggle">
+        <div class="name">Mirror <span class="hint">Selfie-style flip</span></div>
+        <div class="switch on" data-camera="mirror"></div>
+      </div>
+      <div class="cam-preview-wrap">
+        <video id="camPreview" autoplay playsinline muted></video>
+        <div class="cam-preview-empty" id="camPreviewEmpty">Off</div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-label">Mode</div>
+      <div class="seg modes-grid" id="modeSeg">
+        <button data-mode="y" class="active">Y-Pitch</button>
+        <button data-mode="x">X-Pitch</button>
+        <button data-mode="color">Color</button>
+        <button data-mode="radial">Radial</button>
+        <button data-mode="ribbon">Ribbon</button>
+        <button data-mode="constellation">Constell.</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-label">Color Source</div>
+      <div class="seg" id="colorSeg">
+        <button data-color="pitch" class="active">Pitch</button>
+        <button data-color="random">Sticky</button>
+      </div>
+    </div>
+
+    <div class="group" id="shapeGroup">
+      <div class="group-label">Shape</div>
+      <div class="shape-grid" id="shapeGrid">
+        <button data-shape="circle" class="active">Circle</button>
+        <button data-shape="ring">Ring</button>
+        <button data-shape="particles">Particles</button>
+        <button data-shape="waveform">Wave</button>
+        <button data-shape="bars">Bars</button>
+        <button data-shape="ripple">Ripple</button>
+        <button data-shape="spiral">Spiral</button>
+        <button data-shape="pulse-wave">Pulse</button>
+        <button data-shape="lightning">Lightning</button>
+        <button data-shape="geometric">Geometric</button>
+        <button data-shape="dna">DNA</button>
+        <button data-shape="comet">Comet</button>
+        <button data-shape="firework">Firework</button>
+      </div>
+      <div class="aspect-hint" id="shapeHint">Applies to Y-Pitch, X-Pitch, Radial</div>
+    </div>
+
+    <div class="group">
+      <div class="group-label">Sound</div>
+      <div class="patch-grid" id="patchGrid">
+        <button data-patch="triangle" class="active">Triangle</button>
+        <button data-patch="bell">Bell</button>
+        <button data-patch="pluck">Pluck</button>
+        <button data-patch="pad">Pad</button>
+        <button data-patch="bass">Bass</button>
+      </div>
+      <div class="toggle">
+        <div class="name">Reverb <span class="hint">Spacious tail</span></div>
+        <div class="switch on" data-audio="reverb"></div>
+      </div>
+      <div class="slider-row">
+        <div class="head"><span>Reverb amt</span><span class="val" id="reverbVal">35%</span></div>
+        <input type="range" id="reverbSlider" min="0" max="100" value="35" />
+      </div>
+      <div class="toggle">
+        <div class="name">Delay <span class="hint">Echoing repeats</span></div>
+        <div class="switch" data-audio="delay"></div>
+      </div>
+      <div class="slider-row">
+        <div class="head"><span>Delay amt</span><span class="val" id="delayVal">25%</span></div>
+        <input type="range" id="delaySlider" min="0" max="100" value="25" />
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-label">Effects</div>
+      <div class="toggle">
+        <div class="name">Bloom <span class="hint">Glow on bright notes</span></div>
+        <div class="switch on" data-fx="bloom"></div>
+      </div>
+      <div class="toggle">
+        <div class="name">Trails <span class="hint">Velocity particles</span></div>
+        <div class="switch on" data-fx="trails"></div>
+      </div>
+      <div class="toggle">
+        <div class="name">Smear <span class="hint">Motion blur</span></div>
+        <div class="switch on" data-fx="smear"></div>
+      </div>
+      <div class="toggle">
+        <div class="name">Beat Pulse <span class="hint">Whole-canvas throb</span></div>
+        <div class="switch on" data-fx="pulse"></div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-label">MIDI Live</div>
+      <div class="cc-row">
+        <span class="cc-name">Sustain (CC 64)</span>
+        <span class="cc-val" id="sustainVal">off</span>
+      </div>
+      <div class="cc-row">
+        <span class="cc-name">Mod wheel → Size (CC 1)</span>
+        <span class="cc-val" id="modVal">—</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-label">Color Controls</div>
+      <div class="cc-mapping-hint">Click Learn, then move a slider on your keyboard. Right-click a row to unbind.</div>
+
+      <div class="cc-mapping" data-target="hueShift">
+        <div class="cc-mapping-head">
+          <span class="cc-target-name">Hue shift</span>
+          <button class="cc-learn-btn" data-target="hueShift">Learn</button>
+        </div>
+        <div class="cc-mapping-status" data-target="hueShift">unmapped</div>
+      </div>
+
+      <div class="cc-mapping" data-target="saturation">
+        <div class="cc-mapping-head">
+          <span class="cc-target-name">Saturation</span>
+          <button class="cc-learn-btn" data-target="saturation">Learn</button>
+        </div>
+        <div class="cc-mapping-status" data-target="saturation">unmapped</div>
+      </div>
+
+      <div class="cc-mapping" data-target="lightness">
+        <div class="cc-mapping-head">
+          <span class="cc-target-name">Lightness</span>
+          <button class="cc-learn-btn" data-target="lightness">Learn</button>
+        </div>
+        <div class="cc-mapping-status" data-target="lightness">unmapped</div>
+      </div>
+
+      <div class="cc-mapping" data-target="hueJitter">
+        <div class="cc-mapping-head">
+          <span class="cc-target-name">Hue jitter</span>
+          <button class="cc-learn-btn" data-target="hueJitter">Learn</button>
+        </div>
+        <div class="cc-mapping-status" data-target="hueJitter">unmapped</div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-label">Brush</div>
+      <div class="slider-row">
+        <div class="head"><span>Size</span><span class="val" id="sizeVal">1.0×</span></div>
+        <input type="range" id="sizeSlider" min="20" max="200" value="100" />
+      </div>
+      <div class="slider-row">
+        <div class="head"><span>Decay</span><span class="val" id="decayVal">2.0s</span></div>
+        <input type="range" id="decaySlider" min="0" max="100" value="30" />
+        <div class="slider-hint">← fades quickly · permanent →</div>
+      </div>
+    </div>
+
+    <div class="group">
+      <button id="clearBtn">Clear Canvas</button>
+    </div>
+  </aside>
+
+  <!-- STAGE -->
+  <main class="stage">
+    <div class="canvas-wrap" id="canvasWrap">
+      <canvas id="paint"></canvas>
+
+      <div class="hud">
+        <div class="rec-pill" id="recPill">
+          <div class="blob"></div>
+          <span>REC</span>
+        </div>
+        <div class="last-note" id="lastNote"></div>
+      </div>
+
+      <div class="empty-state" id="emptyState">
+        <div class="glyph">𝆕</div>
+        <div class="text">Connect MIDI · Play to begin</div>
+      </div>
+
+      <div class="watermark" id="watermark">midi monet</div>
+
+      <div class="drum-drawer" id="drumDrawer">
+        <div class="drum-handle" id="drumHandle">
+          <span class="drum-handle-icon" id="drumHandleIcon">▲</span>
+          <span class="drum-handle-label">Drums</span>
+          <span class="drum-handle-status" id="drumHandleStatus">— off</span>
+        </div>
+        <div class="drum-body">
+          <div class="drum-controls">
+            <button class="drum-play-btn" id="drumPlayBtn">▶ Play</button>
+            <div class="drum-tempo">
+              <span class="drum-tempo-label">BPM</span>
+              <input type="range" id="drumTempoSlider" min="60" max="180" value="100" />
+              <span class="drum-tempo-val" id="drumTempoVal">100</span>
+            </div>
+            <div class="drum-toggle-block">
+              <label class="drum-toggle-label">
+                <input type="checkbox" id="drumVisualize" checked />
+                <span>Visualize</span>
+              </label>
+            </div>
+            <button class="drum-clear-btn" id="drumClearBtn">Clear</button>
+          </div>
+          <div class="drum-grid-wrap">
+            <div class="drum-row" data-track="kick">
+              <div class="drum-row-label">Kick</div>
+              <div class="drum-steps" data-track="kick"></div>
+            </div>
+            <div class="drum-row" data-track="snare">
+              <div class="drum-row-label">Snare</div>
+              <div class="drum-steps" data-track="snare"></div>
+            </div>
+            <div class="drum-row" data-track="hihat">
+              <div class="drum-row-label">Hat</div>
+              <div class="drum-steps" data-track="hihat"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="transport">
+      <button id="recBtn" class="primary">● Record</button>
+      <div class="timer" id="timer">00:00</div>
+      <button id="undoBtn" title="Undo last note (⌘Z / Ctrl+Z)">↶ Undo</button>
+      <button id="captureBtn">Capture PNG</button>
+      <button id="fullscreenBtn" class="icon-btn" title="Full screen (Shift+F)" aria-label="Toggle full screen">⛶</button>
+    </div>
+  </main>
+</div>
+
+<!-- EXPORT MODAL -->
+<div class="modal-backdrop" id="modal">
+  <div class="modal" id="modalContent">
+    <h2>Export your performance</h2>
+    <p class="muted" id="modalSub">Recording captured. Pick a format.</p>
+
+    <video id="previewVideo" class="preview" controls style="display:none;"></video>
+    <img id="previewGif" class="preview" style="display:none;" />
+
+    <div class="progress" id="progressWrap" style="display:none;">
+      <div class="bar" id="progressBar"></div>
+    </div>
+    <div class="muted" id="progressText" style="display:none;"></div>
+
+    <div class="export-buttons">
+      <button id="downloadVideoBtn" class="primary">Download Video (.webm)</button>
+      <button id="exportGifBtn">Export GIF</button>
+      <button id="closeModalBtn">Close</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+// =============================================================
+// MIDI PAINTER — PERFORMANCE MODE
+// Builds on the original Painter (X / Y / Color / Radial modes,
+// 49-key range C2–C6, sticky-random palette) and adds:
+//   • Manual REC pipeline → both WebM video (with audio) and GIF
+//   • Bloom, velocity particle trails, smear/motion-blur, beat-pulse
+//   • Branded overlay (timer pill + watermark) baked into export
+// =============================================================
+
+// ------------- Constants -------------
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const MIN_NOTE = 36;  // C2  (49-key controller)
+const MAX_NOTE = 84;  // C6
+const NOTE_RANGE = MAX_NOTE - MIN_NOTE;
+
+// Aspect ratio presets — Instagram-friendly sizes.
+// Reels/Stories want 1080×1920; feed square is 1080×1080; landscape stays at 1920×1080.
+const ASPECT_PRESETS = {
+  '16:9': { w: 1920, h: 1080, label: 'Landscape · IG feed (letterboxed)' },
+  '1:1':  { w: 1080, h: 1080, label: 'Square · IG feed (no crop)' },
+  '9:16': { w: 1080, h: 1920, label: 'Vertical · Reels & Stories' },
+};
+
+// ------------- DOM -------------
+const canvas = document.getElementById('paint');
+const ctx = canvas.getContext('2d');
+const wrap = document.getElementById('canvasWrap');
+
+// Paint buffer for canvas-overlay mode.
+// In overlay mode, all paint operations go into this buffer (which decays normally),
+// and the main canvas is rebuilt each frame as: video → composite buffer over video.
+// In other modes, this buffer is unused and `ctx` is the paint target directly.
+let paintBuffer = null;
+let paintCtx = null;
+
+function ensurePaintBuffer() {
+  if (cameraState.camMode !== 'canvas') return;
+  if (paintBuffer && paintBuffer.width === canvas.width && paintBuffer.height === canvas.height) return;
+  paintBuffer = document.createElement('canvas');
+  paintBuffer.width = canvas.width;
+  paintBuffer.height = canvas.height;
+  paintCtx = paintBuffer.getContext('2d');
+}
+
+// Returns the active paint context: paintBuffer in canvas-overlay mode, main ctx otherwise.
+function getPaintCtx() {
+  if (cameraState.camMode === 'canvas' && paintCtx) return paintCtx;
+  return ctx;
+}
+
+// ------------- Undo system -------------
+// Snapshot the paint state right before each note is painted, so undo can restore it.
+// We support two paths:
+//   • Bitmap modes (Y-Pitch, X-Pitch, Color, Radial) — capture the paint context as ImageData,
+//     plus side-effect arrays (particles, pulses, lastPaintPos).
+//   • State modes (Ribbon, Constellation) — capture the relevant array length so we can pop back.
+// Stack capped — but the cap dynamically grows when in "painting mode" (decay >= 0.99),
+// because users building a permanent composition need much deeper undo history.
+// At normal decay the canvas is constantly fading and old undos are mostly useless;
+// at decay 1.00 every note is permanent and a 50-note-old mistake is still visible.
+const MAX_UNDO_PERFORMANCE = 20;   // normal decay
+const MAX_UNDO_PAINTING = 100;     // decay >= 0.99 — deep history for composition
+function currentMaxUndo() {
+  return state.decay >= 1.0 ? MAX_UNDO_PAINTING : MAX_UNDO_PERFORMANCE;
+}
+const undoStack = [];
+
+function snapshotForUndo() {
+  const pctx = getPaintCtx();
+  const targetCanvas = (cameraState.camMode === 'canvas' && paintBuffer) ? paintBuffer : canvas;
+  let bitmap = null;
+  if (state.mode === 'y' || state.mode === 'x' || state.mode === 'color' || state.mode === 'radial') {
+    // Only capture bitmap for accumulating modes — Ribbon/Constellation redraw from arrays.
+    bitmap = pctx.getImageData(0, 0, targetCanvas.width, targetCanvas.height);
+  }
+  const snap = {
+    mode: state.mode,
+    bitmap,
+    particles: state.particles.length,
+    pulses: state.pulses.length,
+    ribbonNodes: state.ribbonNodes.length,
+    stars: state.stars.length,
+    lastPaintPos: state.lastPaintPos ? { ...state.lastPaintPos } : null,
+  };
+  undoStack.push(snap);
+  if (undoStack.length > currentMaxUndo()) undoStack.shift();
+  updateUndoButton();
+  return snap;  // caller can stash this for in-place repaints
+}
+
+function performUndo() {
+  if (undoStack.length === 0) return;
+  const snap = undoStack.pop();
+  // Restore mode-specific state
+  if (snap.bitmap) {
+    const pctx = getPaintCtx();
+    const targetCanvas = (cameraState.camMode === 'canvas' && paintBuffer) ? paintBuffer : canvas;
+    // Restore the saved bitmap
+    pctx.putImageData(snap.bitmap, 0, 0);
+  }
+  // Trim side-effect arrays back to their pre-note lengths
+  state.particles.length = snap.particles;
+  state.pulses.length = snap.pulses;
+  state.ribbonNodes.length = snap.ribbonNodes;
+  state.stars.length = snap.stars;
+  state.lastPaintPos = snap.lastPaintPos;
+  // If we just undid the very first note, restore the empty-state hint
+  if (undoStack.length === 0 && state.ribbonNodes.length === 0 && state.stars.length === 0) {
+    // hasPainted stays true so we don't bring back the hint mid-session;
+    // user must hit Clear for that. This avoids a flash of empty-state during rapid undos.
+  }
+  updateUndoButton();
+}
+
+function clearUndoStack() {
+  undoStack.length = 0;
+  updateUndoButton();
+}
+
+function updateUndoButton() {
+  const btn = document.getElementById('undoBtn');
+  if (btn) btn.disabled = undoStack.length === 0;
+}
+const recPill = document.getElementById('recPill');
+const lastNoteEl = document.getElementById('lastNote');
+const emptyState = document.getElementById('emptyState');
+const recBtn = document.getElementById('recBtn');
+const captureBtn = document.getElementById('captureBtn');
+const clearBtn = document.getElementById('clearBtn');
+const timerEl = document.getElementById('timer');
+const connectBtn = document.getElementById('connectBtn');
+const midiStatus = document.getElementById('midiStatus');
+const midiText = document.getElementById('midiText');
+const sizeSlider = document.getElementById('sizeSlider');
+const sizeVal = document.getElementById('sizeVal');
+const decaySlider = document.getElementById('decaySlider');
+const decayVal = document.getElementById('decayVal');
+const modal = document.getElementById('modal');
+const modalSub = document.getElementById('modalSub');
+const previewVideo = document.getElementById('previewVideo');
+const previewGif = document.getElementById('previewGif');
+const downloadVideoBtn = document.getElementById('downloadVideoBtn');
+const exportGifBtn = document.getElementById('exportGifBtn');
+const closeModalBtn = document.getElementById('closeModalBtn');
+const progressWrap = document.getElementById('progressWrap');
+const progressBar = document.getElementById('progressBar');
+const progressText = document.getElementById('progressText');
+const aspectHint = document.getElementById('aspectHint');
+
+// Set internal resolution + visible wrap sizing for the current aspect.
+// We size the visible frame to fit within the available stage area while
+// preserving aspect — JS-side instead of CSS aspect-ratio because we want to
+// constrain by both width AND height (vertical 9:16 would otherwise overflow).
+function applyAspect(aspect) {
+  const preset = ASPECT_PRESETS[aspect];
+  if (!preset) return;
+  state.aspect = aspect;
+
+  // Internal render resolution
+  canvas.width = preset.w;
+  canvas.height = preset.h;
+
+  // Compute visible size: fit inside the stage padding box, with a max width
+  // to keep landscape from getting absurd on big monitors.
+  sizeStageFrame();
+  aspectHint.textContent = preset.label;
+}
+
+function sizeStageFrame() {
+  const preset = ASPECT_PRESETS[state.aspect];
+  const stageEl = document.querySelector('.stage');
+  const stageRect = stageEl.getBoundingClientRect();
+  const fs = isFullscreenSafe();
+  // In fullscreen we want the canvas to fill the screen — no padding reserve, no cap.
+  // In normal mode we leave room for visible padding and the transport bar.
+  const padX = fs ? 0 : 80;
+  const padY = fs ? 0 : 160; // 80 padding + 80 transport reserve
+  const availW = stageRect.width - padX;
+  const availH = stageRect.height - padY;
+  const ratio = preset.w / preset.h;
+  let w = availW;
+  let h = w / ratio;
+  if (h > availH) {
+    h = availH;
+    w = h * ratio;
+  }
+  // Cap landscape in normal mode so it doesn't blow out on huge monitors.
+  // In fullscreen we drop the cap — fill the screen.
+  if (!fs && state.aspect === '16:9') w = Math.min(w, 1200);
+  h = w / ratio;
+  wrap.style.width = `${Math.round(w)}px`;
+  wrap.style.height = `${Math.round(h)}px`;
+}
+// Helper that doesn't crash if called before isFullscreen is defined (during init)
+function isFullscreenSafe() {
+  const el = document.querySelector('.app');
+  return el ? el.classList.contains('fullscreen') : false;
+}
+
+// ------------- State -------------
+const state = {
+  mode: 'y',
+  aspect: '16:9',
+  shape: 'circle',
+  colorSource: 'pitch',
+  fx: { bloom: true, trails: true, smear: true, pulse: true },
+  brushSize: 1.0,
+  decay: 0.94,
+  midiConnected: false,
+  activeNotes: new Map(), // midi → { startTime, velocity }
+  particles: [],
+  pulses: [], // beat-pulse rings
+  ribbonNodes: [],   // ribbon mode: array of {x, y, t, color, w} ordered by x
+  ribbonHead: 0,     // current scrolling x position (canvas coords)
+  ribbonLastFrame: 0,
+  stars: [],         // constellation: array of {x, y, color, born}
+  pitchColors: new Map(), // sticky-random cache
+  lastPaintPos: null, // for smear connection
+  pulsePhase: 0,
+  hasPainted: false,
+  // recording
+  recording: false,
+  recStart: 0,
+  videoBlob: null,
+  recordedFrames: [], // for GIF: array of ImageData snapshots @ ~12fps
+  gifFrameInterval: 80, // ms between GIF frames
+  lastGifFrameTime: 0,
+};
+
+// ------------- Audio -------------
+// Architecture:
+//   Note voice → patch chain → dryGain → masterGain → destination + recDest
+//                            ↓
+//                            sendGain → reverb / delay → masterGain
+// Patches build their own oscillator/filter setup and return a "voice" object
+// with a release(time) method so sustain pedal can hold notes indefinitely.
+
+let audioCtx = null;
+let masterGain = null;
+let dryGain = null;
+let reverbInput = null;
+let reverbWet = null;
+let delayInput = null;
+let delayWet = null;
+let recDest = null;
+
+const audioState = {
+  patch: 'triangle',
+  reverbOn: true,
+  reverbAmount: 0.35,
+  delayOn: false,
+  delayAmount: 0.25,
+  sustain: false,
+  // Held voices keyed by midi, each = { release: fn, sustained: bool }
+  voices: new Map(),
+  // Voices being held by sustain pedal after note-off
+  sustained: new Set(),
+};
+
+// ------------- Camera -------------
+// camMode: 'off' | 'split' | 'canvas'
+//   off    — no camera, art-only output
+//   split  — camera in one half of recording, art in the other (existing behavior)
+//   canvas — camera fills the entire art canvas; paint is drawn ON TOP of live video
+// blend (canvas mode only): 'glow' | 'overlay' | 'permanent'
+const cameraState = {
+  camMode: 'off',
+  blend: 'glow',
+  mirror: true,
+  stream: null,
+  videoEl: document.getElementById('camPreview'),
+  previewWrap: document.querySelector('.cam-preview-wrap'),
+  previewEmpty: document.getElementById('camPreviewEmpty'),
+};
+
+// ------------- Color Controls (CC-driven) -------------
+// Each target has:
+//   cc       — the bound CC number (null until learned)
+//   value    — last received raw 0..127 value
+//   normalized — 0..1 form of value
+// applyColorMods() consumes these to transform the base color computed from pitch.
+const colorControls = {
+  // Default targets — values centered to "no effect" so unmapped state acts as identity.
+  hueShift:  { cc: null, value: 0,  normalized: 0,    target: 'Hue shift',  unit: '°' },
+  saturation:{ cc: null, value: 64, normalized: 0.5,  target: 'Saturation', unit: '×' },
+  lightness: { cc: null, value: 64, normalized: 0.5,  target: 'Lightness',  unit: '' },
+  hueJitter: { cc: null, value: 0,  normalized: 0,    target: 'Hue jitter', unit: '°' },
+};
+let learningTarget = null;  // name of target currently in "learn" mode, or null
+
+function startLearning(targetName) {
+  // Cancel any other in-flight learn
+  if (learningTarget && learningTarget !== targetName) {
+    cancelLearning(learningTarget);
+  }
+  learningTarget = targetName;
+  document.querySelector(`.cc-mapping[data-target="${targetName}"]`).classList.add('learning');
+  document.querySelector(`.cc-learn-btn[data-target="${targetName}"]`).classList.add('learning');
+  document.querySelector(`.cc-learn-btn[data-target="${targetName}"]`).textContent = 'Listening…';
+}
+function cancelLearning(targetName) {
+  document.querySelector(`.cc-mapping[data-target="${targetName}"]`).classList.remove('learning');
+  document.querySelector(`.cc-learn-btn[data-target="${targetName}"]`).classList.remove('learning');
+  const ctrl = colorControls[targetName];
+  document.querySelector(`.cc-learn-btn[data-target="${targetName}"]`).textContent = ctrl.cc != null ? 'Re-learn' : 'Learn';
+  if (learningTarget === targetName) learningTarget = null;
+}
+function clearMapping(targetName) {
+  const ctrl = colorControls[targetName];
+  // If a CC was already used by another target, we just overwrite below — first clean ours.
+  ctrl.cc = null;
+  // Reset to identity defaults
+  if (targetName === 'hueShift') { ctrl.value = 0; ctrl.normalized = 0; }
+  else if (targetName === 'saturation' || targetName === 'lightness') { ctrl.value = 64; ctrl.normalized = 0.5; }
+  else if (targetName === 'hueJitter') { ctrl.value = 0; ctrl.normalized = 0; }
+  updateMappingUI(targetName);
+}
+function bindCC(targetName, ccNum) {
+  // If another target was bound to this CC, unbind it (one-CC-per-target invariant)
+  for (const [name, ctrl] of Object.entries(colorControls)) {
+    if (name !== targetName && ctrl.cc === ccNum) {
+      ctrl.cc = null;
+      updateMappingUI(name);
+    }
+  }
+  colorControls[targetName].cc = ccNum;
+  cancelLearning(targetName);  // exits learn mode + repaints button text
+  updateMappingUI(targetName);
+}
+
+function updateMappingUI(targetName) {
+  const ctrl = colorControls[targetName];
+  const mapping = document.querySelector(`.cc-mapping[data-target="${targetName}"]`);
+  const status = document.querySelector(`.cc-mapping-status[data-target="${targetName}"]`);
+  const btn = document.querySelector(`.cc-learn-btn[data-target="${targetName}"]`);
+  if (ctrl.cc != null) {
+    mapping.classList.add('bound');
+    btn.classList.add('bound');
+    btn.textContent = 'Re-learn';
+    // Display current value with appropriate unit
+    let display;
+    if (targetName === 'hueShift') display = `CC ${ctrl.cc} · ${Math.round(ctrl.normalized * 360)}°`;
+    else if (targetName === 'saturation') display = `CC ${ctrl.cc} · ${(0.4 + ctrl.normalized * 0.9).toFixed(2)}×`;
+    else if (targetName === 'lightness') display = `CC ${ctrl.cc} · ${ctrl.normalized < 0.5 ? '−' : '+'}${Math.abs(Math.round((ctrl.normalized - 0.5) * 60))}`;
+    else if (targetName === 'hueJitter') display = `CC ${ctrl.cc} · ±${Math.round(ctrl.normalized * 60)}°`;
+    status.textContent = display;
+  } else {
+    mapping.classList.remove('bound');
+    btn.classList.remove('bound');
+    btn.textContent = 'Learn';
+    status.textContent = 'unmapped';
+  }
+}
+
+// Apply current CC values to a base HSL color. Called by colorForNote.
+function applyColorMods(baseHSL, midi) {
+  let { h, s, l } = baseHSL;
+  // Hue shift (0..360°)
+  h = (h + colorControls.hueShift.normalized * 360) % 360;
+  // Saturation multiplier 0.4 → 1.3
+  s = Math.max(0, Math.min(100, s * (0.4 + colorControls.saturation.normalized * 0.9)));
+  // Lightness offset −30..+30
+  l = Math.max(0, Math.min(95, l + (colorControls.lightness.normalized - 0.5) * 60));
+  // Hue jitter — random ±0..60° per note
+  const jitterRange = colorControls.hueJitter.normalized * 60;
+  if (jitterRange > 0) {
+    h = (h + (Math.random() * 2 - 1) * jitterRange + 360) % 360;
+  }
+  return { h, s, l };
+}
+
+async function startCamera() {
+  if (cameraState.stream) return true; // already running
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+      audio: false, // we don't want camera audio — mic noise would compete with synth
+    });
+    cameraState.stream = stream;
+    cameraState.videoEl.srcObject = stream;
+    cameraState.previewWrap.classList.add('on');
+    return true;
+  } catch (err) {
+    alert('Could not access camera: ' + err.message);
+    cameraState.camMode = 'off';
+    return false;
+  }
+}
+
+function stopCamera() {
+  if (cameraState.stream) {
+    cameraState.stream.getTracks().forEach(t => t.stop());
+    cameraState.stream = null;
+    cameraState.videoEl.srcObject = null;
+  }
+  cameraState.previewWrap.classList.remove('on');
+}
+
+function applyCameraMirror() {
+  cameraState.previewWrap.classList.toggle('mirror', cameraState.mirror);
+}
+applyCameraMirror();
+
+function ensureAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 0.22;
+  masterGain.connect(audioCtx.destination);
+
+  recDest = audioCtx.createMediaStreamDestination();
+  masterGain.connect(recDest);
+
+  dryGain = audioCtx.createGain();
+  dryGain.gain.value = 1.0;
+  dryGain.connect(masterGain);
+
+  // Reverb: ConvolverNode with a synthetic impulse response (decaying noise burst).
+  // Convolution has no feedback path, so it cannot self-oscillate — safe by construction.
+  reverbInput = audioCtx.createGain();
+  reverbWet = audioCtx.createGain();
+  reverbWet.gain.value = audioState.reverbOn ? audioState.reverbAmount : 0;
+
+  const convolver = audioCtx.createConvolver();
+  convolver.buffer = makeImpulseResponse(audioCtx, 2.4, 2.5);
+
+  // Light pre-EQ to keep the tail warm, not harsh
+  const reverbLP = audioCtx.createBiquadFilter();
+  reverbLP.type = 'lowpass';
+  reverbLP.frequency.value = 5000;
+
+  reverbInput.connect(convolver);
+  convolver.connect(reverbLP);
+  reverbLP.connect(reverbWet);
+  reverbWet.connect(masterGain);
+
+  // Delay: simple feedback delay (kept — feedback below 0.5 is stable)
+  delayInput = audioCtx.createGain();
+  delayWet = audioCtx.createGain();
+  delayWet.gain.value = audioState.delayOn ? audioState.delayAmount : 0;
+
+  const dl = audioCtx.createDelay(2);
+  dl.delayTime.value = 0.36;
+  const dlFb = audioCtx.createGain();
+  dlFb.gain.value = 0.42;
+  const dlLp = audioCtx.createBiquadFilter();
+  dlLp.type = 'lowpass';
+  dlLp.frequency.value = 3500;
+  delayInput.connect(dl);
+  dl.connect(dlLp);
+  dlLp.connect(dlFb);
+  dlFb.connect(dl);
+  dl.connect(delayWet);
+  delayWet.connect(masterGain);
+
+  applyReverbState();
+  applyDelayState();
+}
+
+// Build a synthetic impulse response: decaying white noise.
+// duration in seconds, decay = exponential falloff power (higher = shorter tail).
+function makeImpulseResponse(ctx, duration, decay) {
+  const rate = ctx.sampleRate;
+  const length = Math.floor(rate * duration);
+  const buf = ctx.createBuffer(2, length, rate);
+  for (let ch = 0; ch < 2; ch++) {
+    const data = buf.getChannelData(ch);
+    for (let i = 0; i < length; i++) {
+      // Slight early-reflection bias for first 60ms
+      const early = i < rate * 0.06 ? 1.4 : 1;
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay) * early * 0.5;
+    }
+  }
+  return buf;
+}
+
+function applyReverbState() {
+  if (!reverbWet) return;
+  const target = audioState.reverbOn ? audioState.reverbAmount : 0;
+  reverbWet.gain.setTargetAtTime(target, audioCtx.currentTime, 0.05);
+}
+function applyDelayState() {
+  if (!delayWet) return;
+  const target = audioState.delayOn ? audioState.delayAmount : 0;
+  delayWet.gain.setTargetAtTime(target, audioCtx.currentTime, 0.05);
+}
+
+function midiToFreq(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+
+// ------- Patch builders -------
+// Each returns { release(time) } and starts immediately.
+function buildPatch(patch, midi, vel) {
+  const now = audioCtx.currentTime;
+  const freq = midiToFreq(midi);
+  const v = vel / 127;
+
+  const out = audioCtx.createGain();
+  out.gain.value = 0;
+  // Send to dry + reverb + delay
+  out.connect(dryGain);
+  out.connect(reverbInput);
+  out.connect(delayInput);
+
+  let oscs = [];
+  let env;
+
+  if (patch === 'triangle') {
+    const o = audioCtx.createOscillator();
+    o.type = 'triangle';
+    o.frequency.value = freq;
+    o.connect(out);
+    o.start(now);
+    oscs.push(o);
+    // ADSR
+    out.gain.setValueAtTime(0, now);
+    out.gain.linearRampToValueAtTime(0.5 * v, now + 0.005);
+    out.gain.linearRampToValueAtTime(0.35 * v, now + 0.15); // sustain level
+    env = { attack: 0.005, decay: 0.15, sustain: 0.35 * v, release: 0.4 };
+  }
+  else if (patch === 'bell') {
+    // FM-ish: carrier sine + modulator at 2x with quick decay
+    const car = audioCtx.createOscillator();
+    car.type = 'sine';
+    car.frequency.value = freq;
+    const mod = audioCtx.createOscillator();
+    mod.type = 'sine';
+    mod.frequency.value = freq * 3.0;
+    const modGain = audioCtx.createGain();
+    modGain.gain.value = freq * 4 * v;
+    modGain.gain.exponentialRampToValueAtTime(0.01, now + 1.2);
+    mod.connect(modGain);
+    modGain.connect(car.frequency);
+    car.connect(out);
+    car.start(now);
+    mod.start(now);
+    oscs.push(car, mod);
+    out.gain.setValueAtTime(0, now);
+    out.gain.linearRampToValueAtTime(0.55 * v, now + 0.002);
+    out.gain.exponentialRampToValueAtTime(0.0001, now + 2.5);
+    env = { attack: 0.002, decay: 2.5, sustain: 0, release: 0.1 };
+  }
+  else if (patch === 'pluck') {
+    // Square through bandpass with quick decay — simulates plucked string vibe
+    const o = audioCtx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.value = freq;
+    const bp = audioCtx.createBiquadFilter();
+    bp.type = 'lowpass';
+    bp.frequency.setValueAtTime(freq * 8, now);
+    bp.frequency.exponentialRampToValueAtTime(freq * 1.2, now + 0.4);
+    bp.Q.value = 4;
+    o.connect(bp).connect(out);
+    o.start(now);
+    oscs.push(o);
+    out.gain.setValueAtTime(0, now);
+    out.gain.linearRampToValueAtTime(0.5 * v, now + 0.003);
+    out.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+    env = { attack: 0.003, decay: 0.8, sustain: 0, release: 0.1 };
+  }
+  else if (patch === 'pad') {
+    // Two detuned saws + lowpass, slow attack
+    const o1 = audioCtx.createOscillator();
+    o1.type = 'sawtooth';
+    o1.frequency.value = freq;
+    o1.detune.value = -8;
+    const o2 = audioCtx.createOscillator();
+    o2.type = 'sawtooth';
+    o2.frequency.value = freq;
+    o2.detune.value = 8;
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 1200 + v * 1500;
+    lp.Q.value = 1.2;
+    o1.connect(lp);
+    o2.connect(lp);
+    lp.connect(out);
+    o1.start(now); o2.start(now);
+    oscs.push(o1, o2);
+    out.gain.setValueAtTime(0, now);
+    out.gain.linearRampToValueAtTime(0.3 * v, now + 0.4);
+    env = { attack: 0.4, decay: 0.2, sustain: 0.28 * v, release: 1.2 };
+  }
+  else if (patch === 'bass') {
+    // Filtered saw, only sounds well below middle C — let it ride above too though.
+    const o = audioCtx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.value = freq;
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(800 + v * 1800, now);
+    lp.frequency.exponentialRampToValueAtTime(400, now + 0.3);
+    lp.Q.value = 6;
+    o.connect(lp).connect(out);
+    o.start(now);
+    oscs.push(o);
+    out.gain.setValueAtTime(0, now);
+    out.gain.linearRampToValueAtTime(0.55 * v, now + 0.008);
+    out.gain.linearRampToValueAtTime(0.4 * v, now + 0.2);
+    env = { attack: 0.008, decay: 0.2, sustain: 0.4 * v, release: 0.3 };
+  }
+
+  // Hard stop scheduled per-osc on release; cleanup ref
+  return {
+    release(at) {
+      const t = at != null ? at : audioCtx.currentTime;
+      out.gain.cancelScheduledValues(t);
+      out.gain.setValueAtTime(out.gain.value, t);
+      out.gain.exponentialRampToValueAtTime(0.0001, t + env.release);
+      oscs.forEach(o => { try { o.stop(t + env.release + 0.05); } catch(e){} });
+    }
+  };
+}
+
+function playNote(midi, vel) {
+  ensureAudio();
+  // If a voice is already playing for this midi, release it first (legato re-trigger)
+  const existing = audioState.voices.get(midi);
+  if (existing) existing.release();
+  const voice = buildPatch(audioState.patch, midi, vel);
+  audioState.voices.set(midi, voice);
+}
+
+function releaseNote(midi) {
+  const voice = audioState.voices.get(midi);
+  if (!voice) return;
+  if (audioState.sustain) {
+    audioState.sustained.add(midi);
+    return;
+  }
+  voice.release();
+  audioState.voices.delete(midi);
+}
+
+function setSustain(on) {
+  audioState.sustain = on;
+  document.getElementById('sustainVal').textContent = on ? 'ON' : 'off';
+  document.getElementById('sustainVal').parentElement.classList.toggle('live', on);
+  if (!on) {
+    // Release all sustained voices
+    for (const midi of audioState.sustained) {
+      const voice = audioState.voices.get(midi);
+      if (voice) voice.release();
+      audioState.voices.delete(midi);
+    }
+    audioState.sustained.clear();
+  }
+}
+
+// ------------- Drum Machine -------------
+// 16-step sequencer with 3 procedural drum voices.
+// Routed through dryGain → masterGain (also fed to reverb/delay sends like the synth).
+// Visual hits paint stylized shapes when 'visualize' is on.
+const drumState = {
+  playing: false,
+  bpm: 100,
+  step: 0,                    // current playhead 0..15
+  patterns: {                 // each pattern is array of 16 booleans
+    kick:  new Array(16).fill(false),
+    snare: new Array(16).fill(false),
+    hihat: new Array(16).fill(false),
+  },
+  nextStepTime: 0,            // when (in audioCtx time) the next step fires
+  schedAheadSec: 0.15,        // schedule this far into the future (low-latency clock)
+  lookaheadMs: 25,            // run scheduler this often
+  visualize: true,
+  lastUIStep: -1,             // last step we highlighted in DOM (for playhead update)
+};
+
+function stepDuration() {
+  // 16 steps per bar = 4 sixteenth notes per beat. Duration of one step in seconds.
+  return (60 / drumState.bpm) / 4;
+}
+
+// Procedural drum synthesis — each function plays one hit at the given audioCtx time.
+function playKick(when) {
+  ensureAudio();
+  const out = audioCtx.createGain();
+  out.gain.value = 0;
+  out.connect(dryGain);
+  out.connect(reverbInput);  // share FX with synth
+  // (skip delay send for kick — it muddies the bottom)
+  const osc = audioCtx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(120, when);
+  osc.frequency.exponentialRampToValueAtTime(35, when + 0.18);
+  osc.connect(out);
+  // Amp envelope: punchy attack, ~0.4s decay
+  out.gain.setValueAtTime(0, when);
+  out.gain.linearRampToValueAtTime(1.0, when + 0.005);
+  out.gain.exponentialRampToValueAtTime(0.0001, when + 0.45);
+  osc.start(when);
+  osc.stop(when + 0.5);
+}
+
+function playSnare(when) {
+  ensureAudio();
+  const out = audioCtx.createGain();
+  out.gain.value = 0;
+  out.connect(dryGain);
+  out.connect(reverbInput);
+  out.connect(delayInput);
+
+  // Noise burst through bandpass — the "snap" half
+  const noiseDur = 0.25;
+  const noiseBuf = audioCtx.createBuffer(1, audioCtx.sampleRate * noiseDur, audioCtx.sampleRate);
+  const data = noiseBuf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  const noise = audioCtx.createBufferSource();
+  noise.buffer = noiseBuf;
+  const bp = audioCtx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 1800;
+  bp.Q.value = 0.7;
+  noise.connect(bp).connect(out);
+
+  // Tonal body — sine at ~200Hz with very fast decay
+  const tone = audioCtx.createOscillator();
+  tone.type = 'triangle';
+  tone.frequency.setValueAtTime(220, when);
+  tone.frequency.exponentialRampToValueAtTime(160, when + 0.05);
+  const toneGain = audioCtx.createGain();
+  toneGain.gain.setValueAtTime(0.6, when);
+  toneGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.07);
+  tone.connect(toneGain).connect(out);
+
+  out.gain.setValueAtTime(0, when);
+  out.gain.linearRampToValueAtTime(0.7, when + 0.002);
+  out.gain.exponentialRampToValueAtTime(0.0001, when + 0.2);
+  noise.start(when);
+  tone.start(when);
+  tone.stop(when + 0.1);
+}
+
+function playHihat(when) {
+  ensureAudio();
+  const out = audioCtx.createGain();
+  out.gain.value = 0;
+  out.connect(dryGain);
+  out.connect(reverbInput);
+  out.connect(delayInput);
+
+  // High-passed noise, very short envelope
+  const noiseDur = 0.08;
+  const noiseBuf = audioCtx.createBuffer(1, audioCtx.sampleRate * noiseDur, audioCtx.sampleRate);
+  const data = noiseBuf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  const noise = audioCtx.createBufferSource();
+  noise.buffer = noiseBuf;
+  const hp = audioCtx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 6000;
+  noise.connect(hp).connect(out);
+
+  out.gain.setValueAtTime(0, when);
+  out.gain.linearRampToValueAtTime(0.4, when + 0.001);
+  out.gain.exponentialRampToValueAtTime(0.0001, when + 0.06);
+  noise.start(when);
+}
+
+// Visual hit per drum — only fires if drumState.visualize is on AND we're not in a
+// state-mode like Ribbon/Constellation (those have their own time-based behavior
+// that wouldn't combine well with rhythmic visual hits).
+function paintDrumHit(track) {
+  if (!drumState.visualize) return;
+  if (state.mode === 'ribbon' || state.mode === 'constellation') return;
+  const W = canvas.width, H = canvas.height;
+  const pctx = getPaintCtx();
+  if (track === 'kick') {
+    // Big firework at center
+    const color = { h: 30, s: 80, l: 60 };  // warm amber/orange
+    SHAPES.firework(pctx, W / 2, H * 0.55, color, 110, 60);
+  } else if (track === 'snare') {
+    // Lightning, random position upper area
+    const color = { h: 200, s: 75, l: 70 };  // cool electric blue
+    const x = W * (0.2 + Math.random() * 0.6);
+    const y = H * (0.25 + Math.random() * 0.3);
+    SHAPES.lightning(pctx, x, y, color, 100, 60);
+  } else if (track === 'hihat') {
+    // Small particle scatter, random corner
+    const color = { h: 0, s: 0, l: 92 };  // bright white-ish
+    const corners = [
+      { x: W * 0.15, y: H * 0.18 },
+      { x: W * 0.85, y: H * 0.18 },
+      { x: W * 0.15, y: H * 0.82 },
+      { x: W * 0.85, y: H * 0.82 },
+    ];
+    const c = corners[Math.floor(Math.random() * corners.length)];
+    SHAPES.particles(pctx, c.x, c.y, color, 80, 60);
+  }
+}
+
+// Sequencer — uses Web Audio's audioCtx.currentTime for sample-accurate scheduling.
+// Pattern: every lookahead tick, schedule any steps whose time falls within the next
+// schedAheadSec window. This keeps timing rock-solid even if the JS thread is busy.
+let drumSchedulerTimer = null;
+function startDrumSequencer() {
+  if (drumState.playing) return;
+  ensureAudio();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  drumState.playing = true;
+  drumState.step = 0;
+  drumState.nextStepTime = audioCtx.currentTime + 0.05;  // small priming delay
+  drumSchedulerTimer = setInterval(schedulerTick, drumState.lookaheadMs);
+  document.getElementById('drumPlayBtn').textContent = '■ Stop';
+  document.getElementById('drumPlayBtn').classList.add('playing');
+  document.getElementById('drumHandleStatus').textContent = `${drumState.bpm} BPM`;
+  document.getElementById('drumHandleStatus').classList.add('live');
+}
+function stopDrumSequencer() {
+  if (!drumState.playing) return;
+  drumState.playing = false;
+  if (drumSchedulerTimer) { clearInterval(drumSchedulerTimer); drumSchedulerTimer = null; }
+  document.getElementById('drumPlayBtn').textContent = '▶ Play';
+  document.getElementById('drumPlayBtn').classList.remove('playing');
+  document.getElementById('drumHandleStatus').textContent = '— off';
+  document.getElementById('drumHandleStatus').classList.remove('live');
+  // Clear playhead highlight
+  document.querySelectorAll('.drum-step.current').forEach(el => el.classList.remove('current'));
+  drumState.lastUIStep = -1;
+}
+
+function schedulerTick() {
+  if (!drumState.playing) return;
+  const now = audioCtx.currentTime;
+  const horizon = now + drumState.schedAheadSec;
+  while (drumState.nextStepTime < horizon) {
+    const stepIdx = drumState.step;
+    const t = drumState.nextStepTime;
+    // Schedule audio for any active tracks at this step
+    if (drumState.patterns.kick[stepIdx])  playKick(t);
+    if (drumState.patterns.snare[stepIdx]) playSnare(t);
+    if (drumState.patterns.hihat[stepIdx]) playHihat(t);
+    // Schedule the visual hits + UI playhead update via setTimeout aligned to step time.
+    // (Visuals don't need sample accuracy; setTimeout is fine and keeps UI on the JS thread.)
+    const delayMs = Math.max(0, (t - now) * 1000);
+    const idxAtFire = stepIdx;
+    setTimeout(() => {
+      if (!drumState.playing) return;
+      if (drumState.patterns.kick[idxAtFire])  paintDrumHit('kick');
+      if (drumState.patterns.snare[idxAtFire]) paintDrumHit('snare');
+      if (drumState.patterns.hihat[idxAtFire]) paintDrumHit('hihat');
+      updatePlayhead(idxAtFire);
+    }, delayMs);
+    // Advance
+    drumState.nextStepTime += stepDuration();
+    drumState.step = (drumState.step + 1) % 16;
+  }
+}
+
+function updatePlayhead(stepIdx) {
+  if (drumState.lastUIStep === stepIdx) return;
+  document.querySelectorAll('.drum-step.current').forEach(el => el.classList.remove('current'));
+  document.querySelectorAll(`.drum-step[data-step="${stepIdx}"]`).forEach(el => el.classList.add('current'));
+  drumState.lastUIStep = stepIdx;
+}
+
+function buildDrumGrid() {
+  for (const track of ['kick', 'snare', 'hihat']) {
+    const wrap = document.querySelector(`.drum-steps[data-track="${track}"]`);
+    wrap.innerHTML = '';
+    for (let i = 0; i < 16; i++) {
+      const cell = document.createElement('div');
+      cell.className = 'drum-step';
+      cell.dataset.track = track;
+      cell.dataset.step = i;
+      cell.addEventListener('click', () => {
+        drumState.patterns[track][i] = !drumState.patterns[track][i];
+        cell.classList.toggle('on', drumState.patterns[track][i]);
+      });
+      wrap.appendChild(cell);
+    }
+  }
+}
+
+function clearDrumPatterns() {
+  for (const track of Object.keys(drumState.patterns)) {
+    drumState.patterns[track].fill(false);
+  }
+  document.querySelectorAll('.drum-step.on').forEach(el => el.classList.remove('on'));
+}
+
+// ------------- Color helpers -------------
+function hsl(h, s, l, a = 1) { return `hsla(${h}, ${s}%, ${l}%, ${a})`; }
+function pitchHue(midi) {
+  const t = Math.max(0, Math.min(1, (midi - MIN_NOTE) / NOTE_RANGE));
+  // wrap from deep red (low) through spectrum to violet (high)
+  return Math.round(t * 320);
+}
+function colorForNote(midi, vel) {
+  const lightness = 50 + (vel / 127) * 20; // brighter on hard hits
+  let base;
+  if (state.colorSource === 'pitch') {
+    base = { h: pitchHue(midi), s: 75, l: lightness };
+  } else {
+    // sticky random: cache one hue per pitch
+    if (!state.pitchColors.has(midi)) {
+      state.pitchColors.set(midi, Math.floor(Math.random() * 360));
+    }
+    base = { h: state.pitchColors.get(midi), s: 70, l: lightness };
+  }
+  return applyColorMods(base, midi);
+}
+
+// ------------- Position mapping -------------
+function positionFor(midi) {
+  const W = canvas.width;
+  const H = canvas.height;
+  const t = Math.max(0, Math.min(1, (midi - MIN_NOTE) / NOTE_RANGE));
+  let x, y;
+  if (state.mode === 'y') {
+    x = Math.random() * W;
+    y = H - t * H;
+  } else if (state.mode === 'x') {
+    x = t * W;
+    y = Math.random() * H;
+  } else if (state.mode === 'radial') {
+    const cx = W / 2, cy = H / 2;
+    const angle = t * Math.PI * 2 - Math.PI / 2;
+    const r = (Math.min(W, H) / 2) * (0.25 + Math.random() * 0.65);
+    x = cx + Math.cos(angle) * r;
+    y = cy + Math.sin(angle) * r;
+  } else { // color
+    x = Math.random() * W;
+    y = Math.random() * H;
+  }
+  return { x, y, t };
+}
+
+// ------------- Painting -------------
+function handleNoteOn(midi, vel) {
+  if (!state.hasPainted) {
+    state.hasPainted = true;
+    emptyState.classList.add('hidden');
+  }
+  playNote(midi, vel);
+
+  // Capture undo snapshot BEFORE any visual changes happen for this note.
+  // We also stash this snapshot reference on the activeNote so that if the user holds
+  // the note and sweeps a color slider, we can restore THIS state and repaint the note
+  // at the same position with the new color (in-place recolor, not trail accumulation).
+  const preNoteSnap = snapshotForUndo();
+
+  const color = colorForNote(midi, vel);
+
+  // Ribbon and Constellation are full visual replacements — they don't paint blobs/smear.
+  let paintedPos = null;
+  if (state.mode === 'ribbon') {
+    addRibbonNode(midi, vel, color);
+  } else if (state.mode === 'constellation') {
+    addStar(midi, vel, color);
+  } else {
+    // Original modes (y / x / color / radial)
+    paintedPos = positionFor(midi);
+    paintBlob(paintedPos.x, paintedPos.y, color, vel, midi);
+
+    // Smear: connect to last paint with a wide stroke
+    if (state.fx.smear && state.lastPaintPos) {
+      const dx = paintedPos.x - state.lastPaintPos.x;
+      const dy = paintedPos.y - state.lastPaintPos.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > 0 && dist < 800) {
+        const pctx = getPaintCtx();
+        pctx.save();
+        pctx.globalCompositeOperation = 'lighter';
+        pctx.strokeStyle = hsl(color.h, color.s, color.l, 0.18);
+        pctx.lineWidth = 6 * state.brushSize * (vel / 127);
+        pctx.lineCap = 'round';
+        pctx.beginPath();
+        pctx.moveTo(state.lastPaintPos.x, state.lastPaintPos.y);
+        pctx.lineTo(paintedPos.x, paintedPos.y);
+        pctx.stroke();
+        pctx.restore();
+      }
+    }
+    state.lastPaintPos = { x: paintedPos.x, y: paintedPos.y };
+
+    // Particle trails (these are universal — re-enable for ribbon/const? skipping for now)
+    if (state.fx.trails) {
+      const count = Math.floor(8 + (vel / 127) * 24);
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 100 + Math.random() * (400 * (vel / 127));
+        state.particles.push({
+          x: paintedPos.x, y: paintedPos.y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: 1.0,
+          decay: 0.6 + Math.random() * 0.4,
+          color: { ...color },
+          size: 4 + Math.random() * 6 * state.brushSize,
+        });
+      }
+    }
+
+    // Beat pulse
+    if (state.fx.pulse) {
+      state.pulses.push({
+        cx: paintedPos.x, cy: paintedPos.y,
+        r: 0,
+        maxR: Math.max(canvas.width, canvas.height) * 0.6,
+        life: 1.0,
+        h: color.h,
+        intensity: vel / 127,
+      });
+    }
+  }
+
+  // Register active note WITH the snapshot+position so live recolor can find them.
+  // playOrder lets us pick the most-recently-played note when sweeping the slider.
+  state.noteCounter = (state.noteCounter || 0) + 1;
+  state.activeNotes.set(midi, {
+    startTime: performance.now(),
+    velocity: vel,
+    preNoteSnap,
+    paintedPos,
+    playOrder: state.noteCounter,
+  });
+
+  // HUD
+  lastNoteEl.textContent = `${NOTE_NAMES[midi % 12]}${Math.floor(midi/12)-1} · vel ${vel}`;
+}
+
+// ------- Ribbon mode -------
+function addRibbonNode(midi, vel, color) {
+  const H = canvas.height;
+  const t = Math.max(0, Math.min(1, (midi - MIN_NOTE) / NOTE_RANGE));
+  // Y mapped from pitch (low = bottom), centered around middle so vibrato stays visible
+  const y = H - t * H;
+  const w = (10 + (vel / 127) * 80) * state.brushSize;
+  state.ribbonNodes.push({
+    x: state.ribbonHead,
+    y,
+    color,
+    w,
+    born: performance.now(),
+  });
+}
+
+// ------- Constellation mode -------
+function addStar(midi, vel, color) {
+  const W = canvas.width;
+  const H = canvas.height;
+  // Place stars by pitch-on-Y, time-on-X (so successive notes form a left-to-right path).
+  const t = Math.max(0, Math.min(1, (midi - MIN_NOTE) / NOTE_RANGE));
+  // X advances based on most-recent star — wraps when reaching right edge.
+  const last = state.stars[state.stars.length - 1];
+  let x;
+  if (!last || last.x > W * 0.92) {
+    x = W * 0.05;
+  } else {
+    x = last.x + W * (0.04 + Math.random() * 0.05);
+  }
+  const y = H * 0.15 + (1 - t) * H * 0.7;  // leave headroom top/bottom
+  const size = (8 + (vel / 127) * 16) * state.brushSize;
+  state.stars.push({
+    x, y,
+    color,
+    size,
+    born: performance.now(),
+    intensity: vel / 127,
+  });
+  // Cap stored stars to prevent unbounded growth in long sessions
+  if (state.stars.length > 500) state.stars.shift();
+}
+
+function handleNoteOff(midi) {
+  state.activeNotes.delete(midi);
+  releaseNote(midi);
+}
+
+// ------------- Shape library -------------
+// Each shape function: (pctx, x, y, color, vel, midi) → draws onto pctx.
+// Shapes are pure geometry — no halo/bloom underlays. Firework is the explicit "burst" shape.
+// pitch (midi) drives some secondary properties, velocity scales size, brushSize multiplies.
+
+// Bloom helper — used ONLY by the Firework shape now.
+function paintBloom(pctx, x, y, color, vel, radius) {
+  pctx.save();
+  pctx.globalCompositeOperation = 'lighter';
+  const grd = pctx.createRadialGradient(x, y, 0, x, y, radius);
+  grd.addColorStop(0, hsl(color.h, color.s, Math.min(80, color.l + 15), 0.5));
+  grd.addColorStop(0.4, hsl(color.h, color.s, color.l, 0.15));
+  grd.addColorStop(1, hsl(color.h, color.s, color.l, 0));
+  pctx.fillStyle = grd;
+  pctx.beginPath();
+  pctx.arc(x, y, radius, 0, Math.PI * 2);
+  pctx.fill();
+  pctx.restore();
+}
+
+const SHAPES = {
+  // Solid disc with a subtle gradient core. Crisp, no surrounding halo.
+  circle(pctx, x, y, color, vel) {
+    const r = (40 + (vel / 127) * 80) * state.brushSize;
+    pctx.save();
+    pctx.globalCompositeOperation = 'lighter';
+    const grd = pctx.createRadialGradient(x, y, 0, x, y, r);
+    grd.addColorStop(0, hsl(color.h, color.s, color.l, 0.95));
+    grd.addColorStop(0.7, hsl(color.h, color.s, color.l, 0.6));
+    grd.addColorStop(1, hsl(color.h, color.s, color.l, 0.3));
+    pctx.fillStyle = grd;
+    pctx.beginPath();
+    pctx.arc(x, y, r, 0, Math.PI * 2);
+    pctx.fill();
+    pctx.restore();
+  },
+
+  // Just an outlined ring. Single ring, no extras.
+  ring(pctx, x, y, color, vel) {
+    const r = (50 + (vel / 127) * 90) * state.brushSize;
+    pctx.save();
+    pctx.globalCompositeOperation = 'lighter';
+    pctx.strokeStyle = hsl(color.h, color.s, color.l, 0.95);
+    pctx.lineWidth = 4 + (vel / 127) * 8;
+    pctx.beginPath();
+    pctx.arc(x, y, r, 0, Math.PI * 2);
+    pctx.stroke();
+    pctx.restore();
+  },
+
+  // Scattered dots — no central anchor.
+  particles(pctx, x, y, color, vel) {
+    const count = Math.floor(20 + (vel / 127) * 50);
+    const spread = (60 + (vel / 127) * 120) * state.brushSize;
+    pctx.save();
+    pctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = Math.random() * spread;
+      const px = x + Math.cos(angle) * dist;
+      const py = y + Math.sin(angle) * dist;
+      const sz = 2 + Math.random() * 6 * state.brushSize;
+      const fade = 1 - (dist / spread);
+      pctx.fillStyle = hsl(color.h, color.s, color.l, 0.7 * fade);
+      pctx.beginPath();
+      pctx.arc(px, py, sz, 0, Math.PI * 2);
+      pctx.fill();
+    }
+    pctx.restore();
+  },
+
+  // Horizontal sine wave; frequency = pitch.
+  waveform(pctx, x, y, color, vel, midi) {
+    const length = (260 + (vel / 127) * 220) * state.brushSize;
+    const amplitude = (8 + (vel / 127) * 36) * state.brushSize;
+    const cycles = 2 + Math.floor((midi - MIN_NOTE) / 6);
+    const startX = x - length / 2;
+    pctx.save();
+    pctx.globalCompositeOperation = 'lighter';
+    pctx.strokeStyle = hsl(color.h, color.s, color.l, 0.92);
+    pctx.lineWidth = 3 + (vel / 127) * 4;
+    pctx.lineCap = 'round';
+    pctx.beginPath();
+    const steps = 80;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const px = startX + t * length;
+      const py = y + Math.sin(t * cycles * Math.PI * 2) * amplitude;
+      if (i === 0) pctx.moveTo(px, py);
+      else pctx.lineTo(px, py);
+    }
+    pctx.stroke();
+    pctx.restore();
+  },
+
+  // Vertical bar with bright cap. EQ-like.
+  bars(pctx, x, y, color, vel) {
+    const barH = 80 + (vel / 127) * 380;
+    const barW = (12 + (vel / 127) * 20) * state.brushSize;
+    pctx.save();
+    pctx.globalCompositeOperation = 'lighter';
+    const grd = pctx.createLinearGradient(0, y - barH, 0, y);
+    grd.addColorStop(0, hsl(color.h, color.s, color.l, 0.95));
+    grd.addColorStop(0.5, hsl(color.h, color.s, color.l, 0.6));
+    grd.addColorStop(1, hsl(color.h, color.s, color.l, 0.05));
+    pctx.fillStyle = grd;
+    pctx.fillRect(x - barW / 2, y - barH, barW, barH);
+    pctx.fillStyle = hsl(color.h, color.s, Math.min(90, color.l + 20), 1);
+    pctx.fillRect(x - barW / 2, y - barH - 4, barW, 4);
+    pctx.restore();
+  },
+
+  // Three concentric rings, no underlay.
+  ripple(pctx, x, y, color, vel) {
+    const baseR = (30 + (vel / 127) * 60) * state.brushSize;
+    pctx.save();
+    pctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 3; i++) {
+      const r = baseR * (1 + i * 0.9);
+      const alpha = 0.85 - i * 0.25;
+      pctx.strokeStyle = hsl(color.h, color.s, color.l, alpha);
+      pctx.lineWidth = 3 + (vel / 127) * 3;
+      pctx.beginPath();
+      pctx.arc(x, y, r, 0, Math.PI * 2);
+      pctx.stroke();
+    }
+    pctx.restore();
+  },
+
+  // Logarithmic spiral curve, tighter on higher notes.
+  spiral(pctx, x, y, color, vel, midi) {
+    const turns = 2.5 + (midi - MIN_NOTE) / 24;
+    const maxR = (70 + (vel / 127) * 100) * state.brushSize;
+    const steps = 200;
+    pctx.save();
+    pctx.globalCompositeOperation = 'lighter';
+    pctx.strokeStyle = hsl(color.h, color.s, color.l, 0.85);
+    pctx.lineWidth = 2.5 + (vel / 127) * 2.5;
+    pctx.lineCap = 'round';
+    pctx.beginPath();
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const angle = t * turns * Math.PI * 2;
+      const r = t * maxR;
+      const px = x + Math.cos(angle) * r;
+      const py = y + Math.sin(angle) * r;
+      if (i === 0) pctx.moveTo(px, py);
+      else pctx.lineTo(px, py);
+    }
+    pctx.stroke();
+    pctx.restore();
+  },
+
+  // Square wave, horizontally extended.
+  'pulse-wave'(pctx, x, y, color, vel, midi) {
+    const length = (260 + (vel / 127) * 220) * state.brushSize;
+    const amplitude = (10 + (vel / 127) * 36) * state.brushSize;
+    const cycles = 2 + Math.floor((midi - MIN_NOTE) / 6);
+    const startX = x - length / 2;
+    pctx.save();
+    pctx.globalCompositeOperation = 'lighter';
+    pctx.strokeStyle = hsl(color.h, color.s, color.l, 0.92);
+    pctx.lineWidth = 3 + (vel / 127) * 4;
+    pctx.lineJoin = 'miter';
+    pctx.beginPath();
+    const segLen = length / (cycles * 2);
+    let high = true;
+    pctx.moveTo(startX, y + (high ? -amplitude : amplitude));
+    for (let i = 0; i < cycles * 2; i++) {
+      const segX = startX + (i + 1) * segLen;
+      pctx.lineTo(segX, y + (high ? -amplitude : amplitude));
+      high = !high;
+      pctx.lineTo(segX, y + (high ? -amplitude : amplitude));
+    }
+    pctx.stroke();
+    pctx.restore();
+  },
+
+  // Jagged bolt with branches.
+  lightning(pctx, x, y, color, vel) {
+    const length = (120 + (vel / 127) * 180) * state.brushSize;
+    const angle = Math.random() * Math.PI * 2;
+    const segments = 12;
+    pctx.save();
+    pctx.globalCompositeOperation = 'lighter';
+    pctx.strokeStyle = hsl(color.h, color.s, Math.min(90, color.l + 20), 0.95);
+    pctx.lineWidth = 2 + (vel / 127) * 3;
+    pctx.lineCap = 'round';
+    pctx.lineJoin = 'round';
+    const points = [{ x, y }];
+    let cx = x, cy = y;
+    for (let i = 1; i <= segments; i++) {
+      const t = i / segments;
+      const baseX = x + Math.cos(angle) * length * t;
+      const baseY = y + Math.sin(angle) * length * t;
+      const jitter = 30 * (1 - Math.abs(t - 0.5));
+      cx = baseX + (Math.random() - 0.5) * jitter;
+      cy = baseY + (Math.random() - 0.5) * jitter;
+      points.push({ x: cx, y: cy });
+    }
+    pctx.beginPath();
+    pctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) pctx.lineTo(points[i].x, points[i].y);
+    pctx.stroke();
+    const branchCount = 1 + Math.floor(Math.random() * 3);
+    for (let b = 0; b < branchCount; b++) {
+      const startIdx = 3 + Math.floor(Math.random() * (points.length - 5));
+      const sp = points[startIdx];
+      const branchLen = length * (0.2 + Math.random() * 0.3);
+      const branchAngle = angle + (Math.random() - 0.5) * 1.5;
+      pctx.lineWidth = 1.5;
+      pctx.strokeStyle = hsl(color.h, color.s, color.l, 0.7);
+      pctx.beginPath();
+      pctx.moveTo(sp.x, sp.y);
+      const segs = 4;
+      for (let i = 1; i <= segs; i++) {
+        const t = i / segs;
+        const bx = sp.x + Math.cos(branchAngle) * branchLen * t + (Math.random() - 0.5) * 12;
+        const by = sp.y + Math.sin(branchAngle) * branchLen * t + (Math.random() - 0.5) * 12;
+        pctx.lineTo(bx, by);
+      }
+      pctx.stroke();
+    }
+    pctx.restore();
+  },
+
+  // Regular polygon, side count = pitch class. Filled + outlined.
+  geometric(pctx, x, y, color, vel, midi) {
+    const sides = 3 + (midi % 12);
+    const r = (40 + (vel / 127) * 80) * state.brushSize;
+    const rotation = -Math.PI / 2;
+    pctx.save();
+    pctx.globalCompositeOperation = 'lighter';
+    pctx.beginPath();
+    for (let i = 0; i < sides; i++) {
+      const angle = rotation + (i / sides) * Math.PI * 2;
+      const px = x + Math.cos(angle) * r;
+      const py = y + Math.sin(angle) * r;
+      if (i === 0) pctx.moveTo(px, py);
+      else pctx.lineTo(px, py);
+    }
+    pctx.closePath();
+    const grd = pctx.createRadialGradient(x, y, 0, x, y, r);
+    grd.addColorStop(0, hsl(color.h, color.s, color.l, 0.7));
+    grd.addColorStop(1, hsl(color.h, color.s, color.l, 0.15));
+    pctx.fillStyle = grd;
+    pctx.fill();
+    pctx.strokeStyle = hsl(color.h, color.s, Math.min(90, color.l + 15), 0.95);
+    pctx.lineWidth = 2.5;
+    pctx.stroke();
+    pctx.restore();
+  },
+
+  // Two intertwining sine strands with rungs.
+  dna(pctx, x, y, color, vel, midi) {
+    const height = (320 + (vel / 127) * 220) * state.brushSize;
+    const amplitude = (24 + (vel / 127) * 32) * state.brushSize;
+    const cycles = 1.5 + ((midi - MIN_NOTE) / 24);
+    pctx.save();
+    pctx.globalCompositeOperation = 'lighter';
+    pctx.lineWidth = 2.5 + (vel / 127) * 2.5;
+    pctx.lineCap = 'round';
+    const startY = y - height / 2;
+    const steps = 100;
+    const strandA = [];
+    const strandB = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const py = startY + t * height;
+      const phase = t * cycles * Math.PI * 2;
+      strandA.push({ x: x + Math.sin(phase) * amplitude, y: py });
+      strandB.push({ x: x + Math.sin(phase + Math.PI) * amplitude, y: py });
+    }
+    pctx.strokeStyle = hsl(color.h, color.s, color.l, 0.35);
+    pctx.lineWidth = 1.5;
+    for (let i = 0; i <= steps; i += 10) {
+      pctx.beginPath();
+      pctx.moveTo(strandA[i].x, strandA[i].y);
+      pctx.lineTo(strandB[i].x, strandB[i].y);
+      pctx.stroke();
+    }
+    pctx.strokeStyle = hsl(color.h, color.s, color.l, 0.92);
+    pctx.lineWidth = 3 + (vel / 127) * 2;
+    pctx.beginPath();
+    strandA.forEach((p, i) => i === 0 ? pctx.moveTo(p.x, p.y) : pctx.lineTo(p.x, p.y));
+    pctx.stroke();
+    pctx.strokeStyle = hsl((color.h + 30) % 360, color.s, color.l, 0.92);
+    pctx.beginPath();
+    strandB.forEach((p, i) => i === 0 ? pctx.moveTo(p.x, p.y) : pctx.lineTo(p.x, p.y));
+    pctx.stroke();
+    pctx.restore();
+  },
+
+  // Bright head + fading tail. Head gets a small bright core (defining feature),
+  // but no big surrounding halo — that's Firework's job.
+  comet(pctx, x, y, color, vel) {
+    const tailLength = (140 + (vel / 127) * 220) * state.brushSize;
+    const angle = Math.random() * Math.PI * 2;
+    const headR = (10 + (vel / 127) * 18) * state.brushSize;
+    const tailEndX = x - Math.cos(angle) * tailLength;
+    const tailEndY = y - Math.sin(angle) * tailLength;
+    pctx.save();
+    pctx.globalCompositeOperation = 'lighter';
+    const grd = pctx.createLinearGradient(x, y, tailEndX, tailEndY);
+    grd.addColorStop(0, hsl(color.h, color.s, color.l, 0.85));
+    grd.addColorStop(0.5, hsl(color.h, color.s, color.l, 0.3));
+    grd.addColorStop(1, hsl(color.h, color.s, color.l, 0));
+    pctx.strokeStyle = grd;
+    pctx.lineWidth = headR * 0.9;
+    pctx.lineCap = 'round';
+    pctx.beginPath();
+    pctx.moveTo(x, y);
+    pctx.lineTo(tailEndX, tailEndY);
+    pctx.stroke();
+    // Just the head — small, bright, no surrounding halo
+    pctx.fillStyle = hsl(color.h, 30, 95, 1);
+    pctx.beginPath();
+    pctx.arc(x, y, headR, 0, Math.PI * 2);
+    pctx.fill();
+    pctx.restore();
+  },
+
+  // Firework — the original luminous burst. Big halo, bright core.
+  firework(pctx, x, y, color, vel) {
+    const baseRadius = (40 + (vel / 127) * 80) * state.brushSize;
+    // Halo
+    if (vel > 60) {
+      paintBloom(pctx, x, y, color, vel, baseRadius * 3);
+    }
+    // Bright core
+    pctx.save();
+    pctx.globalCompositeOperation = 'lighter';
+    const grd = pctx.createRadialGradient(x, y, 0, x, y, baseRadius);
+    grd.addColorStop(0, hsl(color.h, color.s, color.l, 0.95));
+    grd.addColorStop(0.5, hsl(color.h, color.s, color.l, 0.4));
+    grd.addColorStop(1, hsl(color.h, color.s, color.l, 0));
+    pctx.fillStyle = grd;
+    pctx.beginPath();
+    pctx.arc(x, y, baseRadius, 0, Math.PI * 2);
+    pctx.fill();
+    pctx.restore();
+  },
+};
+
+// Dispatch — maintains the original paintBlob signature so handleNoteOn doesn't change.
+function paintBlob(x, y, color, vel, midi) {
+  const pctx = getPaintCtx();
+  const fn = SHAPES[state.shape] || SHAPES.circle;
+  fn(pctx, x, y, color, vel, midi);
+}
+
+// ------------- Render strategies (per mode) -------------
+
+// Accumulating paint with fade — original behavior for Y/X/Color/Radial modes
+function renderAccumulating(now, dt) {
+  const pctx = getPaintCtx();
+  const W = canvas.width, H = canvas.height;
+
+  // Decay — faster when in canvas-overlay mode so the video stays visible
+  const decayFactor = (cameraState.camMode === 'canvas' && cameraState.blend !== 'permanent')
+    ? Math.min(state.decay, 0.88) : state.decay;
+
+  pctx.save();
+  if (cameraState.camMode === 'canvas') {
+    // Canvas-overlay: must use destination-out to fade to TRANSPARENT (so video shows through).
+    pctx.globalCompositeOperation = 'destination-out';
+    pctx.fillStyle = `rgba(0, 0, 0, ${1 - decayFactor})`;
+  } else {
+    // Normal mode: multiplicative darkening — fades clean to BLACK with no gray pockets.
+    // Each frame the canvas is painted-over with semi-transparent black, which darkens
+    // RGB values uniformly. destination-out only reduced alpha, leaving bright RGB
+    // values that read as gray ghosts when alpha got low.
+    pctx.globalCompositeOperation = 'source-over';
+    pctx.fillStyle = `rgba(0, 0, 0, ${1 - decayFactor})`;
+  }
+  pctx.fillRect(0, 0, W, H);
+  pctx.restore();
+
+  // Particles
+  for (let i = state.particles.length - 1; i >= 0; i--) {
+    const p = state.particles[i];
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vx *= 0.96; p.vy *= 0.96;
+    p.life -= p.decay * dt;
+    if (p.life <= 0) { state.particles.splice(i, 1); continue; }
+    pctx.save();
+    pctx.globalCompositeOperation = 'lighter';
+    pctx.fillStyle = hsl(p.color.h, p.color.s, p.color.l, p.life * 0.8);
+    pctx.beginPath();
+    pctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    pctx.fill();
+    pctx.restore();
+  }
+
+  // Beat pulses
+  for (let i = state.pulses.length - 1; i >= 0; i--) {
+    const p = state.pulses[i];
+    p.r += dt * p.maxR * 0.8;
+    p.life -= dt * 1.2;
+    if (p.life <= 0 || p.r > p.maxR) { state.pulses.splice(i, 1); continue; }
+    pctx.save();
+    pctx.globalCompositeOperation = 'lighter';
+    pctx.strokeStyle = hsl(p.h, 70, 60, p.life * 0.25 * p.intensity);
+    pctx.lineWidth = 6 * p.intensity;
+    pctx.beginPath();
+    pctx.arc(p.cx, p.cy, p.r, 0, Math.PI * 2);
+    pctx.stroke();
+    pctx.restore();
+  }
+}
+
+// Ribbon mode: continuous flowing strip scrolls right at constant speed.
+// Each note adds a node at the current head position with thickness=velocity, color=pitch.
+// Old nodes scroll off the left side.
+function renderRibbon(now, dt) {
+  const pctx = getPaintCtx();
+  const W = canvas.width;
+  const H = canvas.height;
+
+  // Clear strategy:
+  //   - canvas-overlay mode: clear paint buffer to transparent so video shows through.
+  //   - normal mode: clear with black (the original ribbon mode aesthetic).
+  if (cameraState.camMode === 'canvas') {
+    pctx.clearRect(0, 0, W, H);
+  } else {
+    pctx.fillStyle = '#000';
+    pctx.fillRect(0, 0, W, H);
+  }
+
+  // Advance head
+  const SPEED = W * 0.18; // pixels per second — full traverse in ~5.5s
+  state.ribbonHead += SPEED * dt;
+  for (const n of state.ribbonNodes) {
+    n.x -= SPEED * dt;
+  }
+  state.ribbonHead = W * 0.85;
+
+  state.ribbonNodes = state.ribbonNodes.filter(n => n.x > -50);
+
+  if (state.ribbonNodes.length >= 2) {
+    pctx.beginPath();
+    const first = state.ribbonNodes[0];
+    pctx.moveTo(first.x, first.y - first.w / 2);
+    for (let i = 1; i < state.ribbonNodes.length; i++) {
+      const n = state.ribbonNodes[i];
+      const prev = state.ribbonNodes[i - 1];
+      const cpx = (prev.x + n.x) / 2;
+      const cpy = (prev.y + n.y) / 2 - (prev.w + n.w) / 4;
+      pctx.quadraticCurveTo(cpx, cpy, n.x, n.y - n.w / 2);
+    }
+    for (let i = state.ribbonNodes.length - 1; i >= 0; i--) {
+      const n = state.ribbonNodes[i];
+      if (i === state.ribbonNodes.length - 1) {
+        pctx.lineTo(n.x, n.y + n.w / 2);
+      } else {
+        const next = state.ribbonNodes[i + 1];
+        const cpx = (next.x + n.x) / 2;
+        const cpy = (next.y + n.y) / 2 + (next.w + n.w) / 4;
+        pctx.quadraticCurveTo(cpx, cpy, n.x, n.y + n.w / 2);
+      }
+    }
+    pctx.closePath();
+
+    const grad = pctx.createLinearGradient(state.ribbonNodes[0].x, 0, state.ribbonNodes[state.ribbonNodes.length-1].x, 0);
+    state.ribbonNodes.forEach((n, i) => {
+      const t = state.ribbonNodes.length === 1 ? 0 : i / (state.ribbonNodes.length - 1);
+      grad.addColorStop(Math.max(0, Math.min(1, t)), hsl(n.color.h, n.color.s, n.color.l, 0.92));
+    });
+    pctx.fillStyle = grad;
+    pctx.fill();
+
+    if (state.fx.bloom) {
+      pctx.save();
+      pctx.shadowBlur = 40;
+      pctx.shadowColor = hsl(state.ribbonNodes[state.ribbonNodes.length-1].color.h, 70, 60, 0.7);
+      pctx.fill();
+      pctx.restore();
+    }
+  }
+
+  // Beat pulses
+  for (let i = state.pulses.length - 1; i >= 0; i--) {
+    const p = state.pulses[i];
+    p.r += dt * p.maxR * 0.8;
+    p.life -= dt * 1.2;
+    if (p.life <= 0 || p.r > p.maxR) { state.pulses.splice(i, 1); continue; }
+    pctx.save();
+    pctx.globalCompositeOperation = 'lighter';
+    pctx.strokeStyle = hsl(p.h, 70, 60, p.life * 0.18 * p.intensity);
+    pctx.lineWidth = 4 * p.intensity;
+    pctx.beginPath();
+    pctx.arc(p.cx, p.cy, p.r, 0, Math.PI * 2);
+    pctx.stroke();
+    pctx.restore();
+  }
+}
+
+// Constellation mode: notes leave luminous points; faint lines connect notes
+// played within a short time window so chords become triangles, melodies become paths.
+function renderConstellation(now, dt) {
+  const pctx = getPaintCtx();
+  const W = canvas.width;
+  const H = canvas.height;
+
+  // Background: vignette in normal mode, transparent in canvas-overlay mode
+  if (cameraState.camMode === 'canvas') {
+    pctx.clearRect(0, 0, W, H);
+  } else {
+    const bgGrad = pctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W, H) * 0.7);
+    bgGrad.addColorStop(0, '#0a0a14');
+    bgGrad.addColorStop(1, '#000000');
+    pctx.fillStyle = bgGrad;
+    pctx.fillRect(0, 0, W, H);
+  }
+
+  if (state.stars.length === 0) return;
+
+  // Time window for connections (chord recognition window)
+  const CONNECT_WINDOW = 350; // ms — notes within this window get connected
+  const STAR_FADE = 12000;    // ms — stars take this long to fade out
+
+  // Draw connections first (under the stars)
+  pctx.save();
+  pctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < state.stars.length; i++) {
+    const a = state.stars[i];
+    for (let j = i + 1; j < state.stars.length; j++) {
+      const b = state.stars[j];
+      const dt2 = Math.abs(a.born - b.born);
+      if (dt2 > CONNECT_WINDOW) continue;
+      const ageA = (now - a.born) / STAR_FADE;
+      const ageB = (now - b.born) / STAR_FADE;
+      const lifeA = Math.max(0, 1 - ageA);
+      const lifeB = Math.max(0, 1 - ageB);
+      const life = Math.min(lifeA, lifeB);
+      if (life <= 0) continue;
+      const proximity = 1 - (dt2 / CONNECT_WINDOW); // 1 = simultaneous
+      const alpha = life * proximity * 0.45;
+      pctx.strokeStyle = hsl(a.color.h, 60, 65, alpha);
+      pctx.lineWidth = 1.5;
+      pctx.beginPath();
+      pctx.moveTo(a.x, a.y);
+      pctx.lineTo(b.x, b.y);
+      pctx.stroke();
+    }
+  }
+  pctx.restore();
+
+  // Draw stars
+  for (let i = state.stars.length - 1; i >= 0; i--) {
+    const s = state.stars[i];
+    const age = (now - s.born) / STAR_FADE;
+    const life = 1 - age;
+    if (life <= 0) {
+      state.stars.splice(i, 1);
+      continue;
+    }
+    pctx.save();
+    pctx.globalCompositeOperation = 'lighter';
+    const glowR = s.size * 4;
+    const grd = pctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, glowR);
+    grd.addColorStop(0, hsl(s.color.h, s.color.s, 70, life * 0.85));
+    grd.addColorStop(0.3, hsl(s.color.h, s.color.s, 60, life * 0.4));
+    grd.addColorStop(1, hsl(s.color.h, s.color.s, 50, 0));
+    pctx.fillStyle = grd;
+    pctx.beginPath();
+    pctx.arc(s.x, s.y, glowR, 0, Math.PI * 2);
+    pctx.fill();
+    pctx.fillStyle = hsl(s.color.h, 30, 90, life);
+    pctx.beginPath();
+    pctx.arc(s.x, s.y, s.size * 0.4 * life, 0, Math.PI * 2);
+    pctx.fill();
+    pctx.restore();
+  }
+}
+
+// ------------- Animation loop -------------
+let lastFrameTime = performance.now();
+function tick(now) {
+  const dt = Math.min((now - lastFrameTime) / 1000, 0.05);
+  lastFrameTime = now;
+
+  if (state.mode === 'ribbon') {
+    renderRibbon(now, dt);
+  } else if (state.mode === 'constellation') {
+    renderConstellation(now, dt);
+  } else {
+    renderAccumulating(now, dt);
+  }
+
+  // Canvas-overlay finalize: composite live video + paint buffer onto main canvas.
+  // Without camera, render functions already drew directly to the main canvas.
+  if (cameraState.camMode === 'canvas' && cameraState.videoEl.videoWidth > 0 && paintBuffer) {
+    const W = canvas.width, H = canvas.height;
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+
+    // Draw video first (cover-fit, with optional mirror)
+    drawCoverFitVideo(ctx, cameraState.videoEl, { x: 0, y: 0, w: W, h: H }, cameraState.mirror);
+
+    // Composite paint buffer based on chosen blend mode
+    if (cameraState.blend === 'glow') {
+      ctx.globalCompositeOperation = 'lighter';   // additive — paint glows on top
+    } else if (cameraState.blend === 'overlay') {
+      ctx.globalCompositeOperation = 'source-over'; // straight overlay — paint sits on top
+    } else if (cameraState.blend === 'permanent') {
+      // Permanent mode: paint accumulates without fading.
+      // We achieve this by NOT decaying the paint buffer in renderAccumulating
+      // (handled there via decayFactor). Composite normally.
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    ctx.drawImage(paintBuffer, 0, 0);
+    ctx.restore();
+  }
+
+  // Recording: capture GIF frames at limited rate.
+  // We sample from the compose canvas so camera+art splits are baked into the GIF too.
+  if (state.recording) {
+    if (now - state.lastGifFrameTime >= state.gifFrameInterval) {
+      state.lastGifFrameTime = now;
+      const sampleSrc = state.composeCanvas || canvas;
+      const sampleCtx = sampleSrc.getContext('2d');
+      const snap = sampleCtx.getImageData(0, 0, sampleSrc.width, sampleSrc.height);
+      state.recordedFrames.push(snap);
+      // Cap to 30s @ 12fps = 360 frames. Beyond that, drop oldest.
+      if (state.recordedFrames.length > 360) {
+        state.recordedFrames.shift();
+      }
+    }
+    const elapsed = (now - state.recStart) / 1000;
+    timerEl.textContent = formatTime(elapsed);
+  }
+
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+function formatTime(s) {
+  const m = Math.floor(s / 60);
+  const ss = Math.floor(s % 60);
+  return `${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
+}
+
+// ------------- MIDI -------------
+async function connectMIDI() {
+  if (!navigator.requestMIDIAccess) {
+    midiText.textContent = 'Web MIDI not supported';
+    return;
+  }
+  try {
+    const access = await navigator.requestMIDIAccess();
+    bindMIDI(access);
+    access.onstatechange = () => bindMIDI(access);
+    ensureAudio();
+  } catch (e) {
+    midiText.textContent = 'Permission denied';
+  }
+}
+function bindMIDI(access) {
+  let count = 0;
+  let name = '';
+  for (const input of access.inputs.values()) {
+    input.onmidimessage = onMIDIMessage;
+    count++;
+    name = input.name || 'MIDI device';
+  }
+  if (count > 0) {
+    state.midiConnected = true;
+    midiStatus.classList.add('connected');
+    midiText.textContent = name;
+    connectBtn.textContent = 'Reconnect';
+  } else {
+    state.midiConnected = false;
+    midiStatus.classList.remove('connected');
+    midiText.textContent = 'No devices found';
+  }
+}
+function onMIDIMessage(e) {
+  const [status, d1, d2] = e.data;
+  const cmd = status & 0xf0;
+  if (cmd === 0x90 && d2 > 0) handleNoteOn(d1, d2);
+  else if (cmd === 0x80 || (cmd === 0x90 && d2 === 0)) handleNoteOff(d1);
+  else if (cmd === 0xB0) handleCC(d1, d2);
+}
+
+function handleCC(cc, value) {
+  // Learn mode intercepts the very next CC (other than sustain pedal which we keep reserved)
+  if (learningTarget && cc !== 64) {
+    bindCC(learningTarget, cc);
+    // Fall through so the value is also applied immediately
+  }
+
+  // Reserved global CCs
+  if (cc === 64) {
+    setSustain(value >= 64);
+    return;
+  }
+  if (cc === 1) {
+    // Mod wheel → brush size, mapped to 0.3× – 2.5×
+    const t = value / 127;
+    const newSize = 0.3 + t * 2.2;
+    state.brushSize = newSize;
+    sizeSlider.value = Math.round(newSize * 100);
+    sizeVal.textContent = newSize.toFixed(1) + '×';
+    const mv = document.getElementById('modVal');
+    mv.textContent = `${value} · ${newSize.toFixed(1)}×`;
+    mv.parentElement.classList.add('live');
+    // Don't return — CC 1 could also be bound to a color control if the user wants
+  }
+
+  // Route to any color controls bound to this CC
+  let colorChanged = false;
+  for (const [name, ctrl] of Object.entries(colorControls)) {
+    if (ctrl.cc === cc) {
+      const prev = ctrl.normalized;
+      ctrl.value = value;
+      ctrl.normalized = value / 127;
+      // Track meaningful change for the held-note repaint trigger
+      if (Math.abs(ctrl.normalized - prev) > 0.001) colorChanged = true;
+      updateMappingUI(name);
+    }
+  }
+  // If a color was bound and changed, repaint held notes with the new color so
+  // sweeping a hue slider during a sustained note actually shows on the canvas.
+  if (colorChanged) repaintHeldNotes();
+}
+
+// Live recolor: when a held note exists and a color CC moves, re-render the most
+// recently played held note IN PLACE — restoring the canvas to before that note painted,
+// then re-drawing it at the same position with the new color. The result is one shape
+// that smoothly shifts color, rather than a trail of accumulated color variations.
+//
+// Limitation: only the most-recently-played held note participates. If you're holding
+// a chord, the latest note responds to slider sweeps; older notes stay set. This is
+// intentional — recoloring multiple notes simultaneously would require nested snapshots
+// per note, which is far more memory and complexity.
+function repaintHeldNotes() {
+  if (state.activeNotes.size === 0) return;
+
+  // Find the most-recently-played held note
+  let latest = null;
+  let latestMidi = null;
+  for (const [midi, info] of state.activeNotes) {
+    if (!latest || info.playOrder > latest.playOrder) {
+      latest = info;
+      latestMidi = midi;
+    }
+  }
+  if (!latest) return;
+
+  const newColor = colorForNote(latestMidi, latest.velocity);
+
+  // Skip recolor if hue change since last repaint is too small (avoids over-painting on tiny slider jitter)
+  if (latest.lastRepaintHue != null) {
+    const dh = Math.min(Math.abs(newColor.h - latest.lastRepaintHue),
+                        360 - Math.abs(newColor.h - latest.lastRepaintHue));
+    if (dh < 4) return;
+  }
+  latest.lastRepaintHue = newColor.h;
+
+  if (state.mode === 'ribbon') {
+    // Mutate the most recent ribbon node — it's still in state.ribbonNodes and will
+    // get redrawn from state every frame, so a color change takes effect immediately.
+    const last = state.ribbonNodes[state.ribbonNodes.length - 1];
+    if (last) last.color = newColor;
+    return;
+  }
+
+  if (state.mode === 'constellation') {
+    // Same idea — mutate the most recent star's color.
+    const last = state.stars[state.stars.length - 1];
+    if (last) last.color = newColor;
+    return;
+  }
+
+  // Bitmap modes: roll back to the snapshot taken before this note painted, then redraw it.
+  if (!latest.preNoteSnap || !latest.preNoteSnap.bitmap || !latest.paintedPos) return;
+  const pctx = getPaintCtx();
+  pctx.putImageData(latest.preNoteSnap.bitmap, 0, 0);
+  paintBlob(latest.paintedPos.x, latest.paintedPos.y, newColor, latest.velocity, latestMidi);
+}
+connectBtn.addEventListener('click', connectMIDI);
+
+// ------------- Computer keyboard fallback (so it's testable without MIDI) -------------
+const KEY_MAP = {
+  'a': 60, 'w': 61, 's': 62, 'e': 63, 'd': 64, 'f': 65,
+  't': 66, 'g': 67, 'y': 68, 'h': 69, 'u': 70, 'j': 71,
+  'k': 72, 'o': 73, 'l': 74, 'p': 75, ';': 76,
+};
+const pressedKeys = new Set();
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  // Cmd/Ctrl+Z = undo last note
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+    e.preventDefault();
+    performUndo();
+    return;
+  }
+  // Shift+F = toggle full screen (plain F is reserved for the keyboard-as-MIDI fallback)
+  if (e.shiftKey && e.key.toLowerCase() === 'f' && !e.metaKey && !e.ctrlKey) {
+    e.preventDefault();
+    toggleFullscreen();
+    return;
+  }
+  // Spacebar = sustain pedal proxy (CC 64)
+  if (e.code === 'Space' && !e.repeat) {
+    e.preventDefault();
+    setSustain(true);
+    return;
+  }
+  const k = e.key.toLowerCase();
+  if (KEY_MAP[k] != null && !pressedKeys.has(k)) {
+    pressedKeys.add(k);
+    handleNoteOn(KEY_MAP[k], 90 + Math.floor(Math.random() * 30));
+  }
+});
+window.addEventListener('keyup', (e) => {
+  if (e.code === 'Space') {
+    setSustain(false);
+    return;
+  }
+  const k = e.key.toLowerCase();
+  if (KEY_MAP[k] != null) {
+    pressedKeys.delete(k);
+    handleNoteOff(KEY_MAP[k]);
+  }
+});
+
+// ------------- UI Wiring -------------
+document.getElementById('aspectSeg').addEventListener('click', (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  // Confirm if there's existing paint that will be lost when canvas resizes
+  if (state.hasPainted) {
+    if (!confirm('Switching aspect ratio will clear the canvas. Continue?')) return;
+  }
+  // Block changing aspect mid-recording — would corrupt the video stream
+  if (state.recording) {
+    alert('Stop recording before changing aspect ratio.');
+    return;
+  }
+  [...e.currentTarget.children].forEach(b => b.classList.toggle('active', b === btn));
+  applyAspect(btn.dataset.aspect);
+  // Reset paint state since canvas dimensions changed
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // Recreate paint buffer at new dimensions if needed
+  paintBuffer = null;
+  paintCtx = null;
+  ensurePaintBuffer();
+  state.particles = [];
+  state.pulses = [];
+  state.ribbonNodes = [];
+  state.stars = [];
+  state.lastPaintPos = null;
+  state.activeNotes.clear();  // their preNoteSnap bitmaps no longer match canvas dims
+  state.hasPainted = false;
+  emptyState.classList.remove('hidden');
+  clearUndoStack();
+});
+
+// Initial sizing + resize handling
+applyAspect('16:9');
+window.addEventListener('resize', sizeStageFrame);
+
+const shapeGroup = document.getElementById('shapeGroup');
+function updateShapeVisibility() {
+  // Shapes only apply when paintBlob is called — i.e. modes y/x/color/radial.
+  // Ribbon and Constellation have their own intrinsic shapes.
+  const usesShapes = ['y', 'x', 'color', 'radial'].includes(state.mode);
+  shapeGroup.classList.toggle('disabled', !usesShapes);
+}
+
+document.getElementById('modeSeg').addEventListener('click', (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  state.mode = btn.dataset.mode;
+  [...e.currentTarget.children].forEach(b => b.classList.toggle('active', b === btn));
+  updateShapeVisibility();
+});
+updateShapeVisibility();
+
+document.getElementById('shapeGrid').addEventListener('click', (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  state.shape = btn.dataset.shape;
+  [...e.currentTarget.children].forEach(b => b.classList.toggle('active', b === btn));
+});
+
+document.getElementById('colorSeg').addEventListener('click', (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  state.colorSource = btn.dataset.color;
+  [...e.currentTarget.children].forEach(b => b.classList.toggle('active', b === btn));
+  if (state.colorSource === 'random') state.pitchColors.clear();
+});
+document.querySelectorAll('.switch').forEach(sw => {
+  sw.addEventListener('click', () => {
+    sw.classList.toggle('on');
+    const on = sw.classList.contains('on');
+    if (sw.dataset.fx) {
+      state.fx[sw.dataset.fx] = on;
+    } else if (sw.dataset.audio) {
+      ensureAudio();
+      if (sw.dataset.audio === 'reverb') { audioState.reverbOn = on; applyReverbState(); }
+      if (sw.dataset.audio === 'delay')  { audioState.delayOn  = on; applyDelayState(); }
+    } else if (sw.dataset.camera === 'mirror') {
+      cameraState.mirror = on;
+      applyCameraMirror();
+    }
+  });
+});
+
+// Camera mode (Off / Split / Canvas)
+const camModeHint = document.getElementById('camModeHint');
+const camBlendGroup = document.getElementById('camBlendGroup');
+document.getElementById('cameraModeSeg').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  if (state.recording) { alert('Stop recording before changing camera mode.'); return; }
+  const newMode = btn.dataset.camMode;
+  const prevMode = cameraState.camMode;
+  // Activate UI immediately for responsiveness; revert if camera fails
+  [...e.currentTarget.children].forEach(b => b.classList.toggle('active', b === btn));
+  cameraState.camMode = newMode;
+
+  if (newMode === 'off') {
+    stopCamera();
+    camModeHint.textContent = 'Camera disabled';
+    camBlendGroup.style.display = 'none';
+  } else {
+    const ok = await startCamera();
+    if (!ok) {
+      // Revert to previous mode on permission denial
+      cameraState.camMode = prevMode;
+      [...e.currentTarget.children].forEach(b => b.classList.toggle('active', b.dataset.camMode === prevMode));
+      return;
+    }
+    if (newMode === 'split') {
+      camModeHint.textContent = 'Split-screen recording — auto layout';
+      camBlendGroup.style.display = 'none';
+    } else {
+      camModeHint.textContent = 'Paint over live video';
+      camBlendGroup.style.display = 'block';
+    }
+  }
+  // Canvas-overlay mode: ensure paint buffer exists at correct size
+  ensurePaintBuffer();
+});
+
+// Paint blend mode (only meaningful when camMode === 'canvas')
+document.getElementById('camBlendSeg').addEventListener('click', (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  cameraState.blend = btn.dataset.camBlend;
+  [...e.currentTarget.children].forEach(b => b.classList.toggle('active', b === btn));
+});
+
+// Patch picker
+document.getElementById('patchGrid').addEventListener('click', (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  audioState.patch = btn.dataset.patch;
+  [...e.currentTarget.children].forEach(b => b.classList.toggle('active', b === btn));
+});
+
+// Reverb amount slider
+const reverbSlider = document.getElementById('reverbSlider');
+const reverbValEl = document.getElementById('reverbVal');
+reverbSlider.addEventListener('input', () => {
+  audioState.reverbAmount = reverbSlider.value / 100;
+  reverbValEl.textContent = `${reverbSlider.value}%`;
+  ensureAudio();
+  applyReverbState();
+});
+
+// Delay amount slider
+const delaySliderEl = document.getElementById('delaySlider');
+const delayValEl = document.getElementById('delayVal');
+delaySliderEl.addEventListener('input', () => {
+  audioState.delayAmount = delaySliderEl.value / 100;
+  delayValEl.textContent = `${delaySliderEl.value}%`;
+  ensureAudio();
+  applyDelayState();
+});
+
+sizeSlider.addEventListener('input', () => {
+  state.brushSize = sizeSlider.value / 100;
+  sizeVal.textContent = state.brushSize.toFixed(1) + '×';
+});
+// Slider value (0..100) → perceived lifetime in seconds, exponential curve.
+// Then derive per-frame decay assuming 60fps and a visibility threshold of 5%.
+// Special-case: slider == 100 → exact 1.0 (permanent).
+function decayFromSliderValue(v) {
+  if (v >= 100) return { decay: 1.0, lifetime: Infinity };
+  // Exponential: 0 → 0.3s, 100 → ~60s
+  const minLife = 0.3, maxLife = 60;
+  const t = v / 100;
+  const lifetime = minLife * Math.pow(maxLife / minLife, t);
+  // After (lifetime * 60) frames, alpha should hit ~5% (0.05)
+  const decay = Math.pow(0.05, 1 / (lifetime * 60));
+  return { decay, lifetime };
+}
+function formatLifetime(lifetime) {
+  if (lifetime === Infinity) return 'permanent';
+  if (lifetime < 1) return `${(lifetime * 1000).toFixed(0)}ms`;
+  if (lifetime < 10) return `${lifetime.toFixed(1)}s`;
+  return `${Math.round(lifetime)}s`;
+}
+
+decaySlider.addEventListener('input', () => {
+  const { decay, lifetime } = decayFromSliderValue(parseInt(decaySlider.value, 10));
+  state.decay = decay;
+  decayVal.textContent = formatLifetime(lifetime);
+  // If we just exited painting mode, trim the now-oversized stack down to the perf cap
+  while (undoStack.length > currentMaxUndo()) undoStack.shift();
+  updateUndoButton();
+});
+// Initialize state.decay to match the slider's default value
+{
+  const { decay, lifetime } = decayFromSliderValue(parseInt(decaySlider.value, 10));
+  state.decay = decay;
+  decayVal.textContent = formatLifetime(lifetime);
+}
+clearBtn.addEventListener('click', () => {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (paintCtx) paintCtx.clearRect(0, 0, paintBuffer.width, paintBuffer.height);
+  state.particles = [];
+  state.pulses = [];
+  state.ribbonNodes = [];
+  state.stars = [];
+  state.lastPaintPos = null;
+  state.pitchColors.clear();
+  state.hasPainted = false;
+  emptyState.classList.remove('hidden');
+  clearUndoStack();
+});
+
+document.getElementById('undoBtn').addEventListener('click', performUndo);
+updateUndoButton();
+
+// ---- Full screen mode ----
+// Two-layer approach: (1) toggle a CSS class that hides the sidebar and removes
+// canvas chrome, (2) request the browser's actual Fullscreen API to remove tabs/URL bar.
+// Esc exits both layers. Mouse motion reveals the transport bar; idle hides it again.
+const appEl = document.querySelector('.app');
+const fullscreenBtn = document.getElementById('fullscreenBtn');
+let cursorIdleTimer = null;
+
+function enterFullscreen() {
+  appEl.classList.add('fullscreen');
+  fullscreenBtn.textContent = '⛶';
+  fullscreenBtn.title = 'Exit full screen (Esc)';
+  // Reveal cursor + transport initially, then start the idle countdown
+  showCursorAndTransport();
+  // Request browser fullscreen — fails silently in some embeds (e.g. iframes without permission)
+  const docEl = document.documentElement;
+  if (docEl.requestFullscreen) {
+    docEl.requestFullscreen().catch(() => {/* ignore — CSS-only mode still works */});
+  }
+  // Canvas needs to resize to the new available space
+  requestAnimationFrame(() => sizeStageFrame());
+}
+
+function exitFullscreen() {
+  appEl.classList.remove('fullscreen');
+  appEl.classList.remove('cursor-active');
+  fullscreenBtn.title = 'Full screen (Shift+F)';
+  if (cursorIdleTimer) { clearTimeout(cursorIdleTimer); cursorIdleTimer = null; }
+  if (document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {});
+  }
+  requestAnimationFrame(() => sizeStageFrame());
+}
+
+function isFullscreen() {
+  return appEl.classList.contains('fullscreen');
+}
+
+function toggleFullscreen() {
+  if (isFullscreen()) exitFullscreen();
+  else enterFullscreen();
+}
+
+function showCursorAndTransport() {
+  appEl.classList.add('cursor-active');
+  if (cursorIdleTimer) clearTimeout(cursorIdleTimer);
+  cursorIdleTimer = setTimeout(() => {
+    if (isFullscreen()) appEl.classList.remove('cursor-active');
+  }, 2200); // 2.2s of inactivity → hide
+}
+
+fullscreenBtn.addEventListener('click', toggleFullscreen);
+
+// Track mouse movement only while in fullscreen — outside it, we want normal cursor behavior
+window.addEventListener('mousemove', () => {
+  if (isFullscreen()) showCursorAndTransport();
+});
+
+// Sync our state with the browser's fullscreen state — handles user pressing Esc directly,
+// or the page losing fullscreen for any other reason (security policy, programmatic exit, etc.)
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement && isFullscreen()) {
+    // Browser left fullscreen; we should match (treat Esc as full exit)
+    exitFullscreen();
+  }
+});
+
+// ---- Drum machine wiring ----
+buildDrumGrid();
+const drumDrawer = document.getElementById('drumDrawer');
+document.getElementById('drumHandle').addEventListener('click', () => {
+  drumDrawer.classList.toggle('open');
+});
+document.getElementById('drumPlayBtn').addEventListener('click', () => {
+  if (drumState.playing) stopDrumSequencer();
+  else startDrumSequencer();
+});
+document.getElementById('drumTempoSlider').addEventListener('input', (e) => {
+  drumState.bpm = parseInt(e.target.value, 10);
+  document.getElementById('drumTempoVal').textContent = drumState.bpm;
+  if (drumState.playing) {
+    document.getElementById('drumHandleStatus').textContent = `${drumState.bpm} BPM`;
+  }
+});
+document.getElementById('drumVisualize').addEventListener('change', (e) => {
+  drumState.visualize = e.target.checked;
+});
+document.getElementById('drumClearBtn').addEventListener('click', clearDrumPatterns);
+
+// CC color-control Learn buttons
+document.querySelectorAll('.cc-learn-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const target = btn.dataset.target;
+    if (learningTarget === target) {
+      // Click again to cancel learn
+      cancelLearning(target);
+    } else {
+      startLearning(target);
+    }
+  });
+});
+
+// Right-click on a learn button or its mapping clears the binding
+document.querySelectorAll('.cc-mapping').forEach(mapping => {
+  mapping.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    const target = mapping.dataset.target;
+    if (colorControls[target].cc != null) {
+      clearMapping(target);
+    }
+  });
+});
+
+captureBtn.addEventListener('click', () => {
+  // Bake a watermark onto a copy and download as PNG
+  const tmp = document.createElement('canvas');
+  tmp.width = canvas.width;
+  tmp.height = canvas.height;
+  const tctx = tmp.getContext('2d');
+  tctx.fillStyle = '#000';
+  tctx.fillRect(0, 0, tmp.width, tmp.height);
+  tctx.drawImage(canvas, 0, 0);
+  drawWatermark(tctx, tmp.width, tmp.height);
+  tmp.toBlob(blob => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `midi-monet-${Date.now()}.png`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, 'image/png');
+});
+
+function drawWatermark(c, W, H) {
+  c.save();
+  // Scale watermark size to canvas height so it reads consistently across aspects
+  const fontSize = Math.round(H * 0.026);
+  const padX = Math.round(H * 0.022);
+  const padY = Math.round(H * 0.022);
+  c.font = `italic ${fontSize}px "Cormorant Garamond", serif`;
+  c.fillStyle = 'rgba(240, 235, 225, 0.55)';
+  c.textAlign = 'right';
+  c.textBaseline = 'bottom';
+  c.fillText('midi monet', W - padX, H - padY);
+  c.restore();
+}
+
+// ------------- RECORDING -------------
+let mediaRecorder = null;
+let recordedChunks = [];
+
+recBtn.addEventListener('click', async () => {
+  if (state.recording) {
+    stopRecording();
+  } else {
+    await startRecording();
+  }
+});
+
+async function startRecording() {
+  ensureAudio();
+  // Resume audio context if suspended (autoplay policy)
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+  // If camera is enabled but stream isn't running (user toggled off then on quickly),
+  // ensure stream is alive
+  // Pre-flight: ensure camera stream exists for any mode that needs it
+  if (cameraState.camMode !== 'off' && !cameraState.stream) {
+    const ok = await startCamera();
+    if (!ok) return;
+  }
+
+  // Compose canvas matches the chosen aspect's dimensions exactly.
+  const composeCanvas = document.createElement('canvas');
+  composeCanvas.width = canvas.width;
+  composeCanvas.height = canvas.height;
+  const cctx = composeCanvas.getContext('2d');
+
+  // Layout strategy for split mode: stacked for square/vertical, side-by-side for landscape.
+  const splitAxis = (state.aspect === '16:9') ? 'horizontal' : 'vertical';
+
+  let composeRunning = true;
+  function composeTick() {
+    if (!composeRunning) return;
+    const W = composeCanvas.width;
+    const H = composeCanvas.height;
+
+    cctx.fillStyle = '#000';
+    cctx.fillRect(0, 0, W, H);
+
+    if (cameraState.camMode === 'split' && cameraState.videoEl.videoWidth > 0) {
+      // Art on top/left (2/3), camera on bottom/right (1/3)
+      const TOP_SHARE = 2 / 3;
+      const artPanel = splitAxis === 'vertical'
+        ? { x: 0, y: 0, w: W, h: H * TOP_SHARE }
+        : { x: 0, y: 0, w: W * TOP_SHARE, h: H };
+      const camPanel = splitAxis === 'vertical'
+        ? { x: 0, y: H * TOP_SHARE, w: W, h: H * (1 - TOP_SHARE) }
+        : { x: W * TOP_SHARE, y: 0, w: W * (1 - TOP_SHARE), h: H };
+
+      drawCoverFitCanvas(cctx, canvas, artPanel);
+      drawCoverFitVideo(cctx, cameraState.videoEl, camPanel, cameraState.mirror);
+
+      cctx.fillStyle = 'rgba(20, 20, 26, 1)';
+      if (splitAxis === 'vertical') {
+        cctx.fillRect(0, H * TOP_SHARE - 1, W, 2);
+      } else {
+        cctx.fillRect(W * TOP_SHARE - 1, 0, 2, H);
+      }
+    } else {
+      // Camera off OR camera 'canvas' mode (where the main `canvas` already contains
+      // video+paint composited together). Either way, just draw the main canvas.
+      cctx.drawImage(canvas, 0, 0, W, H);
+    }
+
+    drawWatermark(cctx, W, H);
+    requestAnimationFrame(composeTick);
+  }
+  composeTick();
+
+  const videoStream = composeCanvas.captureStream(30);
+  const audioTracks = recDest.stream.getAudioTracks();
+  const tracks = [...videoStream.getVideoTracks(), ...audioTracks];
+  const combined = new MediaStream(tracks);
+
+  recordedChunks = [];
+  state.recordedFrames = [];
+  state.lastGifFrameTime = performance.now();
+  // Stash compose canvas + layout for GIF export so the GIF gets the same composition
+  state.composeCanvas = composeCanvas;
+  state.composeSplitAxis = splitAxis;
+  state.composeWithCamera = (cameraState.camMode !== 'off');
+
+  // Pick best supported mimeType
+  let mime = 'video/webm;codecs=vp9,opus';
+  if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm;codecs=vp8,opus';
+  if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
+
+  mediaRecorder = new MediaRecorder(combined, { mimeType: mime, videoBitsPerSecond: 6_000_000 });
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data.size > 0) recordedChunks.push(e.data);
+  };
+  mediaRecorder.onstop = () => {
+    composeRunning = false;
+    state.videoBlob = new Blob(recordedChunks, { type: 'video/webm' });
+    showExportModal();
+  };
+  mediaRecorder.start(200);
+
+  state.recording = true;
+  state.recStart = performance.now();
+  recPill.classList.add('live');
+  recBtn.textContent = '■ Stop';
+  recBtn.classList.remove('primary');
+  recBtn.classList.add('danger');
+  timerEl.classList.add('live');
+}
+
+// Draw a video element into a panel using cover-fit (fills, may crop). Optionally mirror.
+function drawCoverFitVideo(c, video, panel, mirror) {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (!vw || !vh) return;
+  const panelRatio = panel.w / panel.h;
+  const videoRatio = vw / vh;
+  let sx, sy, sw, sh;
+  if (videoRatio > panelRatio) {
+    // Video is wider — crop sides
+    sh = vh;
+    sw = vh * panelRatio;
+    sx = (vw - sw) / 2;
+    sy = 0;
+  } else {
+    // Video is taller — crop top/bottom
+    sw = vw;
+    sh = vw / panelRatio;
+    sx = 0;
+    sy = (vh - sh) / 2;
+  }
+  c.save();
+  if (mirror) {
+    c.translate(panel.x + panel.w, panel.y);
+    c.scale(-1, 1);
+    c.drawImage(video, sx, sy, sw, sh, 0, 0, panel.w, panel.h);
+  } else {
+    c.drawImage(video, sx, sy, sw, sh, panel.x, panel.y, panel.w, panel.h);
+  }
+  c.restore();
+}
+
+// Draw the art canvas into a panel, cover-fit (fills, may crop slightly).
+function drawCoverFitCanvas(c, src, panel) {
+  const sw0 = src.width;
+  const sh0 = src.height;
+  const panelRatio = panel.w / panel.h;
+  const srcRatio = sw0 / sh0;
+  let sx, sy, sw, sh;
+  if (srcRatio > panelRatio) {
+    sh = sh0;
+    sw = sh0 * panelRatio;
+    sx = (sw0 - sw) / 2;
+    sy = 0;
+  } else {
+    sw = sw0;
+    sh = sw0 / panelRatio;
+    sx = 0;
+    sy = (sh0 - sh) / 2;
+  }
+  c.drawImage(src, sx, sy, sw, sh, panel.x, panel.y, panel.w, panel.h);
+}
+
+function stopRecording() {
+  state.recording = false;
+  recPill.classList.remove('live');
+  recBtn.textContent = '● Record';
+  recBtn.classList.add('primary');
+  recBtn.classList.remove('danger');
+  timerEl.classList.remove('live');
+  timerEl.textContent = '00:00';
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+  }
+}
+
+// ------------- EXPORT MODAL -------------
+function showExportModal() {
+  modal.classList.add('show');
+  modalSub.textContent = `Captured ${formatTime((performance.now() - state.recStart) / 1000)} · ${state.recordedFrames.length} GIF frames stored`;
+  if (state.videoBlob) {
+    const url = URL.createObjectURL(state.videoBlob);
+    previewVideo.src = url;
+    previewVideo.style.display = 'block';
+    previewGif.style.display = 'none';
+  }
+  progressWrap.style.display = 'none';
+  progressText.style.display = 'none';
+}
+closeModalBtn.addEventListener('click', () => modal.classList.remove('show'));
+
+downloadVideoBtn.addEventListener('click', () => {
+  if (!state.videoBlob) return;
+  const url = URL.createObjectURL(state.videoBlob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `midi-monet-${Date.now()}.webm`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+// ------------- GIF EXPORT -------------
+// Using a built-in encoder so the artifact stays self-contained.
+// Approach: downscale each captured frame to ~640px wide,
+// quantize to a 256-color palette using a per-frame median-cut
+// (simple uniform octree fallback), and emit GIF89a with LZW-encoded frames.
+// For speed and simplicity we use a global palette derived from the first frame.
+
+exportGifBtn.addEventListener('click', async () => {
+  if (state.recordedFrames.length === 0) return;
+  exportGifBtn.disabled = true;
+  progressWrap.style.display = 'block';
+  progressText.style.display = 'block';
+  progressText.textContent = 'Encoding GIF…';
+
+  // Downscale frames first
+  // Target longest edge at 640px so GIF stays under reasonable file size
+  // regardless of aspect ratio (vertical 9:16 was getting cramped at fixed 640w)
+  const maxEdge = 640;
+  let targetW, targetH;
+  if (canvas.width >= canvas.height) {
+    targetW = maxEdge;
+    targetH = Math.round(canvas.height * (maxEdge / canvas.width));
+  } else {
+    targetH = maxEdge;
+    targetW = Math.round(canvas.width * (maxEdge / canvas.height));
+  }
+
+  const off = document.createElement('canvas');
+  off.width = targetW;
+  off.height = targetH;
+  const offctx = off.getContext('2d');
+
+  // Re-render captured ImageData into a small canvas, then read pixels back
+  const small = [];
+  const src = document.createElement('canvas');
+  src.width = canvas.width;
+  src.height = canvas.height;
+  const sctx = src.getContext('2d');
+
+  for (let i = 0; i < state.recordedFrames.length; i++) {
+    sctx.putImageData(state.recordedFrames[i], 0, 0);
+    // Black background + scaled source
+    offctx.fillStyle = '#000';
+    offctx.fillRect(0, 0, targetW, targetH);
+    offctx.drawImage(src, 0, 0, targetW, targetH);
+    // Watermark — only draw fresh if the source frames don't already have one baked in.
+    // Compose canvas (used during recording) already includes the watermark; art canvas alone does not.
+    if (!state.composeCanvas) {
+      offctx.save();
+      const wmFont = Math.max(10, Math.round(targetH * 0.026));
+      const wmPad = Math.max(6, Math.round(targetH * 0.022));
+      offctx.font = `italic ${wmFont}px "Cormorant Garamond", serif`;
+      offctx.fillStyle = 'rgba(240, 235, 225, 0.55)';
+      offctx.textAlign = 'right';
+      offctx.textBaseline = 'bottom';
+      offctx.fillText('midi monet', targetW - wmPad, targetH - wmPad);
+      offctx.restore();
+    }
+    small.push(offctx.getImageData(0, 0, targetW, targetH));
+    if (i % 10 === 0) {
+      progressBar.style.width = `${(i / state.recordedFrames.length) * 30}%`;
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+
+  progressText.textContent = 'Building palette…';
+  await new Promise(r => setTimeout(r, 0));
+
+  // Build a global palette by uniformly sampling colors from all frames
+  const palette = buildPalette(small, 255); // reserve 1 slot if needed
+
+  progressText.textContent = 'Quantizing frames…';
+  const indexedFrames = [];
+  for (let i = 0; i < small.length; i++) {
+    indexedFrames.push(quantizeFrame(small[i], palette));
+    if (i % 10 === 0) {
+      progressBar.style.width = `${30 + (i / small.length) * 40}%`;
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+
+  progressText.textContent = 'Encoding GIF89a…';
+  await new Promise(r => setTimeout(r, 0));
+  const delay = Math.round(state.gifFrameInterval / 10); // GIF delay in 1/100s
+  const gifBytes = encodeGif(targetW, targetH, palette, indexedFrames, delay);
+  const blob = new Blob([gifBytes], { type: 'image/gif' });
+  const url = URL.createObjectURL(blob);
+
+  previewVideo.style.display = 'none';
+  previewGif.src = url;
+  previewGif.style.display = 'block';
+
+  // Auto-download
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `midi-monet-${Date.now()}.gif`;
+  a.click();
+
+  progressBar.style.width = '100%';
+  progressText.textContent = `GIF ready — ${(blob.size / 1024).toFixed(0)} KB · ${indexedFrames.length} frames`;
+  exportGifBtn.disabled = false;
+});
+
+// ---- Palette builder: sample pixels, run a simple median-cut ----
+function buildPalette(frames, maxColors) {
+  // Sample pixels from frames
+  const samples = [];
+  const sampleStride = 17; // prime stride to hit varied colors
+  for (const f of frames) {
+    const d = f.data;
+    for (let i = 0; i < d.length; i += 4 * sampleStride) {
+      samples.push([d[i], d[i+1], d[i+2]]);
+    }
+    if (samples.length > 30000) break;
+  }
+  // Median cut
+  const buckets = [samples];
+  while (buckets.length < maxColors) {
+    // find bucket with widest range
+    let bestIdx = -1, bestRange = -1, bestChannel = 0;
+    for (let i = 0; i < buckets.length; i++) {
+      const b = buckets[i];
+      if (b.length < 2) continue;
+      let minR=255,minG=255,minB=255,maxR=0,maxG=0,maxB=0;
+      for (const p of b) {
+        if (p[0]<minR) minR=p[0]; if (p[0]>maxR) maxR=p[0];
+        if (p[1]<minG) minG=p[1]; if (p[1]>maxG) maxG=p[1];
+        if (p[2]<minB) minB=p[2]; if (p[2]>maxB) maxB=p[2];
+      }
+      const rR = maxR-minR, rG = maxG-minG, rB = maxB-minB;
+      const r = Math.max(rR, rG, rB);
+      if (r > bestRange) {
+        bestRange = r;
+        bestIdx = i;
+        bestChannel = (rR>=rG && rR>=rB) ? 0 : (rG>=rB ? 1 : 2);
+      }
+    }
+    if (bestIdx < 0) break;
+    const b = buckets[bestIdx];
+    b.sort((a,c) => a[bestChannel] - c[bestChannel]);
+    const half = Math.floor(b.length / 2);
+    const left = b.slice(0, half);
+    const right = b.slice(half);
+    if (left.length === 0 || right.length === 0) break;
+    buckets.splice(bestIdx, 1, left, right);
+  }
+  // Average each bucket
+  const palette = [];
+  for (const b of buckets) {
+    let r=0,g=0,bl=0;
+    for (const p of b) { r+=p[0]; g+=p[1]; bl+=p[2]; }
+    palette.push([Math.round(r/b.length), Math.round(g/b.length), Math.round(bl/b.length)]);
+  }
+  // Pad palette to power-of-two size up to 256
+  let pSize = 2;
+  while (pSize < palette.length) pSize *= 2;
+  while (palette.length < pSize) palette.push([0,0,0]);
+  if (palette.length > 256) palette.length = 256;
+  return palette;
+}
+
+// ---- Map every pixel to nearest palette index ----
+function quantizeFrame(frame, palette) {
+  const d = frame.data;
+  const out = new Uint8Array(frame.width * frame.height);
+  // Build a small color cache
+  const cache = new Map();
+  for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+    const r = d[i], g = d[i+1], b = d[i+2];
+    const key = (r << 16) | (g << 8) | b;
+    let idx = cache.get(key);
+    if (idx === undefined) {
+      let best = 0, bestDist = Infinity;
+      for (let k = 0; k < palette.length; k++) {
+        const p = palette[k];
+        const dr = r - p[0], dg = g - p[1], db = b - p[2];
+        const dist = dr*dr + dg*dg + db*db;
+        if (dist < bestDist) { bestDist = dist; best = k; }
+      }
+      idx = best;
+      cache.set(key, idx);
+    }
+    out[j] = idx;
+  }
+  return out;
+}
+
+// ---- GIF89a encoder (LZW) ----
+function encodeGif(width, height, palette, frames, delayCs) {
+  const out = [];
+  function write(arr) { for (const b of arr) out.push(b); }
+  function writeByte(b) { out.push(b & 0xff); }
+  function writeShort(s) { out.push(s & 0xff); out.push((s >> 8) & 0xff); }
+  function writeString(s) { for (let i = 0; i < s.length; i++) out.push(s.charCodeAt(i)); }
+
+  // Header
+  writeString('GIF89a');
+  writeShort(width); writeShort(height);
+  // Logical Screen Descriptor
+  // GCT present, 8-bit color resolution, palette size = log2(palette.length)-1
+  let pBits = 0;
+  let pSize = 1;
+  while (pSize < palette.length) { pSize *= 2; pBits++; }
+  pBits = Math.max(1, pBits - 1);
+  writeByte(0xF0 | pBits); // packed: GCT=1, color res=7, sort=0, GCT size
+  writeByte(0); // bg color index
+  writeByte(0); // pixel aspect ratio
+
+  // Global Color Table
+  for (let i = 0; i < pSize; i++) {
+    const p = palette[i] || [0,0,0];
+    writeByte(p[0]); writeByte(p[1]); writeByte(p[2]);
+  }
+
+  // NETSCAPE 2.0 loop extension
+  writeByte(0x21); writeByte(0xFF); writeByte(11);
+  writeString('NETSCAPE2.0');
+  writeByte(3); writeByte(1); writeShort(0); writeByte(0);
+
+  for (const frame of frames) {
+    // Graphic Control Extension
+    writeByte(0x21); writeByte(0xF9); writeByte(4);
+    writeByte(0); // disposal=0, no transparent
+    writeShort(delayCs);
+    writeByte(0);
+    writeByte(0);
+    // Image Descriptor
+    writeByte(0x2C);
+    writeShort(0); writeShort(0);
+    writeShort(width); writeShort(height);
+    writeByte(0); // no LCT, not interlaced
+
+    const lzwBytes = lzwEncode(frame, Math.max(2, pBits + 1));
+    writeByte(Math.max(2, pBits + 1)); // LZW min code size
+    // sub-block bytes
+    let pos = 0;
+    while (pos < lzwBytes.length) {
+      const chunk = Math.min(255, lzwBytes.length - pos);
+      writeByte(chunk);
+      for (let i = 0; i < chunk; i++) writeByte(lzwBytes[pos + i]);
+      pos += chunk;
+    }
+    writeByte(0); // block terminator
+  }
+
+  writeByte(0x3B); // trailer
+  return new Uint8Array(out);
+}
+
+function lzwEncode(indices, minCodeSize) {
+  const clearCode = 1 << minCodeSize;
+  const eoiCode = clearCode + 1;
+  let codeSize = minCodeSize + 1;
+  let nextCode = eoiCode + 1;
+
+  const out = [];
+  let bitBuf = 0, bitCount = 0;
+  function emit(code) {
+    bitBuf |= code << bitCount;
+    bitCount += codeSize;
+    while (bitCount >= 8) {
+      out.push(bitBuf & 0xff);
+      bitBuf >>>= 8;
+      bitCount -= 8;
+    }
+  }
+
+  let dict = new Map();
+  function resetDict() {
+    dict = new Map();
+    for (let i = 0; i < clearCode; i++) dict.set(String.fromCharCode(i), i);
+    nextCode = eoiCode + 1;
+    codeSize = minCodeSize + 1;
+  }
+  resetDict();
+  emit(clearCode);
+
+  let prefix = String.fromCharCode(indices[0]);
+  for (let i = 1; i < indices.length; i++) {
+    const c = String.fromCharCode(indices[i]);
+    const combined = prefix + c;
+    if (dict.has(combined)) {
+      prefix = combined;
+    } else {
+      emit(dict.get(prefix));
+      if (nextCode < 4096) {
+        dict.set(combined, nextCode++);
+        if (nextCode > (1 << codeSize) && codeSize < 12) codeSize++;
+      } else {
+        emit(clearCode);
+        resetDict();
+      }
+      prefix = c;
+    }
+  }
+  emit(dict.get(prefix));
+  emit(eoiCode);
+  if (bitCount > 0) out.push(bitBuf & 0xff);
+  return out;
+}
+
+</script>
+</body>
+</html>
