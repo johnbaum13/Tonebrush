@@ -1,617 +1,309 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Signal &amp; Stroke — gallery</title>
-
-<!-- ============================================================= -->
-<!--  HOW TO USE THIS FILE                                          -->
-<!--  1. Scroll down to the CONFIG and PIECES blocks in the script. -->
-<!--  2. For each artwork, paste in: title, date, tool, the video   -->
-<!--     provider ('youtube' or 'vimeo'), and the video ID.         -->
-<!--     - A YouTube URL like youtube.com/watch?v=ABC123  -> ID is ABC123 -->
-<!--     - A Vimeo URL like vimeo.com/987654321          -> ID is 987654321 -->
-<!--  3. Leave videoId as '' for a piece you haven't uploaded yet;  -->
-<!--     it shows the event-strip placeholder until you fill it in. -->
-<!--  4. Drop the file in a GitHub repo, turn on Pages, done.       -->
-<!--  QR codes point at each piece automatically — no config needed.-->
-<!-- ============================================================= -->
-
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Workbench — Tools</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    /* Warm studio-dark palette — the gallery walls stay quiet so the art carries the color */
-    --ink:        #161318;   /* deep warm near-black */
-    --ink-raised: #201C24;   /* cards & surfaces */
-    --ink-line:   #322C39;   /* hairlines, borders */
-    --bone:       #ECE6DA;   /* primary text, warm off-white */
-    --bone-dim:   #948C9A;   /* captions, secondary */
-    --bone-faint: #5E5766;   /* faintest labels */
-    --signal:     #E6A12C;   /* amber — the REC light / note events */
-    --signal-cool:#6FB7C4;   /* cyan — CC / knob events */
-
-    --r: 14px;               /* card radius */
-    --maxw: 1180px;
-    --pad: clamp(20px, 5vw, 64px);
-
-    --f-display: "Space Grotesk", system-ui, sans-serif;
-    --f-body:    "Newsreader", Georgia, serif;
-    --f-mono:    "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --panel:      #16181d;
+    --panel-2:    #1e2128;
+    --card:       #23272f;
+    --card-hover: #282d37;
+    --ink:        #ece7d9;
+    --ink-dim:    #888d98;
+    --signal:     #ff5e3a;   /* coral — "active/rec" accent, used sparingly */
+    --phosphor:   #62d4c4;   /* teal — active/online state */
+    --line:       rgba(236,231,217,0.09);
   }
 
-  * { box-sizing: border-box; }
-
-  html { scroll-behavior: smooth; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
 
   body {
-    margin: 0;
-    background: var(--ink);
-    color: var(--bone);
-    font-family: var(--f-body);
-    font-size: 17px;
-    line-height: 1.6;
+    background: var(--panel);
+    color: var(--ink);
+    font-family: 'Space Grotesk', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
-    /* faint vertical "studio light" wash from the top */
-    background-image: radial-gradient(120% 70% at 50% -10%, rgba(230,161,44,0.06), transparent 60%);
-    background-attachment: fixed;
+    line-height: 1.5;
+    min-height: 100vh;
+    padding: clamp(20px, 5vw, 56px);
   }
 
-  a { color: inherit; text-decoration: none; }
+  .wrap { max-width: 920px; margin: 0 auto; }
 
-  /* ---------- top bar ---------- */
-  .bar {
-    position: sticky; top: 0; z-index: 40;
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 16px;
-    padding: 16px var(--pad);
-    background: rgba(22,19,24,0.78);
-    backdrop-filter: blur(10px);
-    border-bottom: 1px solid var(--ink-line);
-  }
-  .bar-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
-  .rec {
-    display: inline-flex; align-items: center; gap: 8px;
-    font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.18em;
-    color: var(--bone-dim); text-transform: uppercase;
-    white-space: nowrap;
-  }
-  .rec .dot {
-    width: 9px; height: 9px; border-radius: 50%;
-    background: var(--signal);
-    box-shadow: 0 0 0 0 rgba(230,161,44,0.55);
-    animation: pulse 2.4s ease-out infinite;
-  }
-  @keyframes pulse {
-    0%   { box-shadow: 0 0 0 0 rgba(230,161,44,0.45); }
-    70%  { box-shadow: 0 0 0 7px rgba(230,161,44,0); }
-    100% { box-shadow: 0 0 0 0 rgba(230,161,44,0); }
-  }
-  .wordmark {
-    font-family: var(--f-display); font-weight: 600;
-    font-size: 15px; letter-spacing: 0.04em;
-    color: var(--bone); white-space: nowrap;
-    overflow: hidden; text-overflow: ellipsis;
-  }
-  .wordmark a:hover { color: var(--signal); }
-  .count {
-    font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.16em;
-    color: var(--bone-faint); text-transform: uppercase; white-space: nowrap;
+  /* ---------- header / console strip ---------- */
+  header {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    padding: clamp(20px, 4vw, 32px);
+    margin-bottom: 28px;
   }
 
-  /* ---------- shared layout ---------- */
-  main { max-width: var(--maxw); margin: 0 auto; padding: 0 var(--pad) 96px; }
+  .eyebrow {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin-bottom: 16px;
+  }
 
-  /* ---------- hero (gallery view) ---------- */
-  .hero { padding: clamp(48px, 9vw, 104px) 0 clamp(34px, 5vw, 56px); }
-  .hero .eyebrow {
-    font-family: var(--f-mono); font-size: 12px; letter-spacing: 0.22em;
-    color: var(--signal); text-transform: uppercase; margin: 0 0 22px;
+  .led {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--phosphor);
+    box-shadow: 0 0 8px var(--phosphor);
+    animation: pulse 2.6s ease-in-out infinite;
   }
-  .hero h1 {
-    font-family: var(--f-display); font-weight: 700;
-    font-size: clamp(40px, 9vw, 92px); line-height: 0.98;
-    letter-spacing: -0.02em; margin: 0; max-width: 14ch;
-  }
-  .hero .thesis {
-    font-family: var(--f-body); font-size: clamp(18px, 2.3vw, 22px);
-    color: var(--bone-dim); max-width: 46ch; margin: 26px 0 0; line-height: 1.5;
-  }
-  .hero .thesis em { color: var(--bone); font-style: italic; }
-  .hero-strip { margin-top: 38px; height: 46px; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 
-  /* ---------- gallery grid ---------- */
+  h1 {
+    font-size: clamp(32px, 7vw, 54px);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.02;
+  }
+  h1 .mark { color: var(--signal); }
+
+  .tagline {
+    color: var(--ink-dim);
+    margin-top: 12px;
+    max-width: 44ch;
+    font-size: 15px;
+  }
+
+  /* signature element: a thin signal-meter row */
+  .meter {
+    display: flex;
+    gap: 4px;
+    margin-top: 22px;
+    align-items: flex-end;
+    height: 18px;
+  }
+  .meter span {
+    width: 4px;
+    background: var(--line);
+    border-radius: 1px;
+    animation: bounce 1.8s ease-in-out infinite;
+  }
+  @keyframes bounce {
+    0%, 100% { height: 4px;  background: var(--line); }
+    50%      { height: 16px; background: var(--phosphor); }
+  }
+
+  /* ---------- grid ---------- */
+  .section-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    margin: 0 4px 14px;
+    display: flex;
+    justify-content: space-between;
+  }
+
   .grid {
-    display: grid; gap: clamp(18px, 2.4vw, 30px);
-    grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 14px;
   }
+
   .card {
-    display: flex; flex-direction: column;
-    background: var(--ink-raised);
-    border: 1px solid var(--ink-line);
-    border-radius: var(--r);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 22px 22px 18px;
+    text-decoration: none;
+    color: inherit;
     overflow: hidden;
-    transition: transform .25s ease, border-color .25s ease, box-shadow .25s ease;
+    transition: background 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
+  }
+  /* the left "channel strip" that lights up on hover */
+  .card::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--line);
+    transition: background 0.18s ease, box-shadow 0.18s ease;
   }
   .card:hover, .card:focus-visible {
-    transform: translateY(-4px);
-    border-color: rgba(230,161,44,0.5);
-    box-shadow: 0 18px 40px -22px rgba(0,0,0,0.8);
+    background: var(--card-hover);
+    border-color: rgba(98,212,196,0.4);
+    transform: translateY(-2px);
     outline: none;
   }
-  .card-thumb {
-    position: relative; aspect-ratio: 16 / 10;
-    background: #0f0d11; overflow: hidden;
+  .card:hover::before, .card:focus-visible::before {
+    background: var(--phosphor);
+    box-shadow: 0 0 12px var(--phosphor);
   }
-  .card-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .card-thumb canvas { width: 100%; height: 100%; display: block; }
-  .play {
-    position: absolute; inset: 0; display: grid; place-items: center;
-    background: linear-gradient(180deg, rgba(15,13,17,0) 40%, rgba(15,13,17,0.5));
-    opacity: 0; transition: opacity .25s ease;
-  }
-  .card:hover .play, .card:focus-visible .play { opacity: 1; }
-  .play span {
-    width: 54px; height: 54px; border-radius: 50%;
-    background: rgba(236,230,218,0.92); color: var(--ink);
-    display: grid; place-items: center; padding-left: 4px;
-    font-size: 20px;
-  }
-  .pending {
-    position: absolute; left: 12px; top: 12px;
-    font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.14em;
-    text-transform: uppercase; color: var(--ink);
-    background: var(--signal); padding: 4px 8px; border-radius: 6px;
-  }
-  .card-body { padding: 16px 18px 20px; display: flex; flex-direction: column; gap: 10px; flex: 1; }
-  .meta-line {
-    font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.08em;
-    color: var(--bone-dim); text-transform: uppercase;
-    display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
-  }
-  .meta-line .id { color: var(--signal); }
-  .meta-line .sep { color: var(--bone-faint); }
-  .card h3 {
-    font-family: var(--f-display); font-weight: 600;
-    font-size: 21px; line-height: 1.15; margin: 0; letter-spacing: -0.01em;
-  }
-  .card .mini-strip { height: 26px; margin-top: auto; }
 
-  /* ---------- detail view ---------- */
-  .detail { padding-top: clamp(28px, 5vw, 52px); }
-  .back {
-    display: inline-flex; align-items: center; gap: 8px;
-    font-family: var(--f-mono); font-size: 12px; letter-spacing: 0.1em;
-    color: var(--bone-dim); text-transform: uppercase; margin-bottom: 40px;
-    transition: color .2s ease;
-  }
-  .back:hover { color: var(--signal); }
-  .detail .eyebrow {
-    font-family: var(--f-mono); font-size: 12px; letter-spacing: 0.14em;
-    color: var(--bone-dim); text-transform: uppercase; margin: 0 0 16px;
-    display: flex; gap: 10px; flex-wrap: wrap;
-  }
-  .detail .eyebrow .id { color: var(--signal); }
-  .detail .eyebrow .sep { color: var(--bone-faint); }
-  .detail h1 {
-    font-family: var(--f-display); font-weight: 700;
-    font-size: clamp(32px, 6vw, 60px); line-height: 1.02;
-    letter-spacing: -0.02em; margin: 0; max-width: 18ch;
-  }
-  .detail-strip { height: 40px; margin: 26px 0 34px; }
-  .player {
-    position: relative; aspect-ratio: 16 / 9; width: 100%;
-    background: #0f0d11; border-radius: var(--r);
-    overflow: hidden; border: 1px solid var(--ink-line);
-  }
-  .player iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
-  .player-empty {
-    position: absolute; inset: 0; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 16px; text-align: center;
-    padding: 24px;
-  }
-  .player-empty canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.5; }
-  .player-empty .msg {
-    position: relative; font-family: var(--f-mono); font-size: 13px;
-    color: var(--bone); background: rgba(22,19,24,0.7); padding: 14px 18px;
-    border-radius: 10px; border: 1px solid var(--ink-line); max-width: 30ch; line-height: 1.6;
-  }
-  .player-empty .msg b { color: var(--signal); font-weight: 600; }
+  .card-name { font-size: 19px; font-weight: 500; letter-spacing: -0.01em; }
+  .card-blurb { color: var(--ink-dim); font-size: 13.5px; margin-top: 7px; flex: 1; }
 
-  .detail-foot {
-    display: grid; grid-template-columns: 1fr; gap: 30px;
-    margin-top: 36px; align-items: start;
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; }
+  .tag {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 3px 7px;
   }
-  @media (min-width: 760px) {
-    .detail-foot { grid-template-columns: 1.6fr 1fr; gap: 48px; }
-  }
-  .blurb { font-size: 19px; line-height: 1.65; color: var(--bone); margin: 0; }
-  .blurb + .blurb { margin-top: 16px; }
-  .aside {
-    border-top: 1px solid var(--ink-line); padding-top: 22px;
-    display: flex; flex-direction: column; gap: 18px;
-  }
-  .spec { font-family: var(--f-mono); font-size: 12.5px; color: var(--bone-dim); }
-  .spec dt { color: var(--bone-faint); letter-spacing: 0.1em; text-transform: uppercase; font-size: 10.5px; }
-  .spec dd { margin: 3px 0 14px; color: var(--bone); }
+  .tag.device { color: var(--signal); border-color: rgba(255,94,58,0.4); }
 
-  .btn {
-    display: inline-flex; align-items: center; gap: 10px; align-self: flex-start;
-    font-family: var(--f-mono); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase;
-    color: var(--ink); background: var(--signal);
-    border: 0; border-radius: 10px; padding: 13px 20px; cursor: pointer;
-    transition: transform .15s ease, background .2s ease;
+  .launch {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.06em;
   }
-  .btn:hover { transform: translateY(-2px); background: #f2b143; }
-  .btn:focus-visible { outline: 2px solid var(--bone); outline-offset: 3px; }
-
-  /* ---------- empty gallery ---------- */
-  .empty {
-    text-align: center; padding: 80px 0;
-    border: 1px dashed var(--ink-line); border-radius: var(--r);
-  }
-  .empty h2 { font-family: var(--f-display); font-size: 26px; margin: 0 0 12px; }
-  .empty p { color: var(--bone-dim); max-width: 42ch; margin: 0 auto; }
-  .empty code { font-family: var(--f-mono); color: var(--signal); font-size: 0.85em; }
-
-  /* ---------- QR modal ---------- */
-  .modal {
-    position: fixed; inset: 0; z-index: 60; display: none;
-    place-items: center; padding: 24px;
-    background: rgba(10,8,12,0.74); backdrop-filter: blur(6px);
-  }
-  .modal.open { display: grid; }
-  .modal-card {
-    background: var(--bone); color: var(--ink);
-    border-radius: 18px; padding: 30px; max-width: 360px; width: 100%;
-    text-align: center; box-shadow: 0 30px 80px -20px rgba(0,0,0,0.7);
-  }
-  .modal-card h3 { font-family: var(--f-display); margin: 0 0 6px; font-size: 20px; }
-  .modal-card .sub { font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.06em; color: #6b6470; text-transform: uppercase; margin: 0 0 20px; }
-  #qrTarget { display: inline-block; padding: 14px; background: #fff; border-radius: 10px; }
-  #qrTarget img, #qrTarget canvas { display: block; }
-  .modal-card .url {
-    font-family: var(--f-mono); font-size: 11px; word-break: break-all;
-    color: #5a5460; margin: 18px 0 22px; line-height: 1.5;
-  }
-  .modal-card .close {
-    font-family: var(--f-mono); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase;
-    background: var(--ink); color: var(--bone); border: 0; border-radius: 9px;
-    padding: 11px 22px; cursor: pointer;
-  }
-  .modal-card .hint { font-family: var(--f-body); font-size: 13px; color: #6b6470; margin: 16px 0 0; }
+  .launch .go { color: var(--ink); }
+  .launch .arrow { transition: transform 0.18s ease; color: var(--phosphor); }
+  .card:hover .arrow, .card:focus-visible .arrow { transform: translateX(4px); }
+  .launch .newtab { color: var(--ink-dim); font-size: 10px; }
 
   footer {
-    max-width: var(--maxw); margin: 0 auto; padding: 40px var(--pad) 60px;
-    border-top: 1px solid var(--ink-line);
-    font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.08em;
-    color: var(--bone-faint); text-transform: uppercase;
-    display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    margin-top: 36px;
+    padding: 0 4px;
+    color: var(--ink-dim);
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    line-height: 1.7;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    * { animation: none !important; scroll-behavior: auto !important; transition: none !important; }
+    .led, .meter span { animation: none; }
+    .led { opacity: 1; }
+    .meter span { height: 10px; background: var(--phosphor); }
+    .card, .arrow { transition: none; }
   }
 </style>
 </head>
 <body>
+<div class="wrap">
 
-<div class="bar">
-  <div class="bar-left">
-    <span class="rec"><span class="dot" aria-hidden="true"></span>rec</span>
-    <span class="wordmark"><a href="?" data-nav>SIGNAL &amp; STROKE</a></span>
-  </div>
-  <span class="count" id="count"></span>
+  <header>
+    <div class="eyebrow"><span class="led"></span> Online · Bushwick, NYC</div>
+    <h1>The <span class="mark">Workbench</span></h1>
+    <p class="tagline">Browser-based instruments and tools. Pick a module to open it.</p>
+    <div class="meter" id="meter" aria-hidden="true"></div>
+  </header>
+
+  <div class="section-label"><span>Modules</span><span id="count"></span></div>
+  <div class="grid" id="grid"></div>
+
+  <footer>
+    Built and hosted on GitHub Pages. Tools marked <span style="color:var(--signal)">MIC / MIDI</span> open in a new tab for device access.
+  </footer>
+
 </div>
 
-<main id="view" aria-live="polite"></main>
-
-<footer>
-  <span>Signal &amp; Stroke</span>
-  <span>MIDI-driven generative art, performed live</span>
-</footer>
-
-<!-- QR modal -->
-<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="qrTitle">
-  <div class="modal-card">
-    <h3 id="qrTitle">Scan to watch</h3>
-    <p class="sub" id="qrPieceLabel"></p>
-    <div id="qrTarget"></div>
-    <p class="url" id="qrUrl"></p>
-    <button class="close" id="qrClose">Close</button>
-    <p class="hint">Screenshot this or print it next to the piece.</p>
-  </div>
-</div>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
-/* =================================================================
-   CONFIG  — edit these
-   ================================================================= */
-const CONFIG = {
-  studioName: "SIGNAL & STROKE",   // shown top-left; change to whatever you call the gallery
+  /* =========================================================
+     EDIT THIS LIST TO ADD / REMOVE / RENAME TOOLS.
+     - file:   the .html filename in this repo (relative link)
+     - newTab: true for anything needing mic or a MIDI device,
+               so it opens full-screen with full permissions
+     ========================================================= */
+  const TOOLS = [
+    {
+      name: "Sonic Brush",
+      file: "sonic-brush.html",
+      blurb: "Live mic-input audio painter with motion models and recording.",
+      tags: ["CANVAS", "MIC"],
+      newTab: true
+    },
+    {
+      name: "MIDI Monet",
+      file: "midi-monet.html",
+      blurb: "Generative painting driven by a MIDI controller.",
+      tags: ["CANVAS", "MIDI"],
+      newTab: true
+    },
+    {
+      name: "MIDI Triptych",
+      file: "midi-triptych.html",
+      blurb: "Three-layer ink / color / detail canvas with CC-knob layer switching.",
+      tags: ["CANVAS", "MIDI"],
+      newTab: true
+    },
+    {
+      name: "MIDI Stencil",
+      file: "midi-stencil.html",
+      blurb: "Scratch-off reveal mechanic controlled by MIDI.",
+      tags: ["CANVAS", "MIDI"],
+      newTab: true
+    },
+    {
+      name: "MIDI DaVinci",
+      file: "midi-davinci.html",
+      blurb: "Turtle-cursor drawing with a built-in drum machine and synth.",
+      tags: ["CANVAS", "MIDI", "AUDIO"],
+      newTab: true
+    },
+    {
+      name: "AI Workflow Audit",
+      file: "workflow-audit.html",
+      blurb: "Five-question intake that returns a structured efficiency report.",
+      tags: ["TOOL"],
+      newTab: false
+    }
+  ];
 
-  // Where the site is hosted. Used to build QR-code links.
-  // Leave as "" and it auto-detects the current address — fine for most cases.
-  // Set it explicitly (e.g. "https://yourname.github.io/gallery/") if you want
-  // QR codes to always point at the live site even while testing locally.
-  siteUrl: ""
-};
+  // ---- render ----
+  const grid = document.getElementById('grid');
+  TOOLS.forEach(t => {
+    const a = document.createElement('a');
+    a.className = 'card';
+    a.href = t.file;
+    if (t.newTab) { a.target = '_blank'; a.rel = 'noopener'; }
 
-/* =================================================================
-   PIECES  — your artworks
-   provider: "youtube" | "vimeo"
-   videoId:  the bit after watch?v=  (YouTube)  or  vimeo.com/  (Vimeo)
-             leave "" until you've uploaded it — shows a placeholder.
-   tool:     which app made it
-   id:       short catalog code, also becomes the URL ( ?piece=ss-001 )
-   ================================================================= */
-const PIECES = [
-  {
-    id: "ss-001",
-    title: "Tide, in Impasto",
-    tool: "MIDI Monet",
-    date: "2026",
-    provider: "youtube",
-    videoId: "",
-    blurb: [
-      "An improvisation in the impressionist engine — each key press lays a daub of color, each held chord blooms a wash across the canvas.",
-      "Recorded in a single take. What you see redraws exactly as it was played."
-    ]
-  },
-  {
-    id: "ss-002",
-    title: "Three Hands at Once",
-    tool: "MIDI Triptych",
-    date: "2026",
-    provider: "youtube",
-    videoId: "",
-    blurb: [
-      "Built on the three-layer canvas — ink, color, detail. The mod knob switches which layer the keys are painting into, so one performance moves between all three.",
-      "The cyan ticks in the strip above are those knob moves."
-    ]
-  },
-  {
-    id: "ss-003",
-    title: "Reveal Study No. 4",
-    tool: "MIDI Stencil",
-    date: "2026",
-    provider: "youtube",
-    videoId: "",
-    blurb: [
-      "A scratch-off piece: the image is hidden under a field, and playing scrapes it away to expose what's underneath."
-    ]
-  },
-  {
-    id: "ss-004",
-    title: "Turtle Walks the Drum",
-    tool: "MIDI DaVinci",
-    date: "2026",
-    provider: "youtube",
-    videoId: "",
-    blurb: [
-      "The turtle-cursor draws while the drum machine and synth keep time. Line follows rhythm — the picture is a transcript of the groove."
-    ]
-  },
-  {
-    id: "ss-005",
-    title: "Spoken Into Color",
-    tool: "Sonic Brush",
-    date: "2026",
-    provider: "youtube",
-    videoId: "",
-    blurb: [
-      "Live mic input drives the brush — the louder and brighter the sound, the more the motion model pushes the paint.",
-      "Recorded on iPhone."
-    ]
-  }
-];
+    const isDevice = t.tags.some(x => x === 'MIC' || x === 'MIDI');
+    const tagsHTML = t.tags.map(x => {
+      const dev = (x === 'MIC' || x === 'MIDI') ? ' device' : '';
+      return `<span class="tag${dev}">${x}</span>`;
+    }).join('');
 
-/* =================================================================
-   APP
-   ================================================================= */
-const view = document.getElementById('view');
-const $ = (s, el = document) => el.querySelector(s);
-
-document.getElementById('count').textContent =
-  String(PIECES.length).padStart(2, '0') + (PIECES.length === 1 ? ' work' : ' works');
-
-function baseUrl() {
-  if (CONFIG.siteUrl) return CONFIG.siteUrl.replace(/\?.*$/, '');
-  return location.origin + location.pathname;
-}
-function pieceUrl(id) {
-  const b = baseUrl();
-  return b + (b.includes('?') ? '&' : '?') + 'piece=' + encodeURIComponent(id);
-}
-function findPiece(id) { return PIECES.find(p => p.id === id); }
-
-/* ---- thumbnails ---- */
-function thumbUrl(p) {
-  if (p.thumb) return p.thumb;                                   // manual override wins
-  if (p.provider === 'youtube' && p.videoId)
-    return `https://img.youtube.com/vi/${p.videoId}/hqdefault.jpg`;
-  return null;                                                   // vimeo / empty -> draw strip
-}
-function embedUrl(p) {
-  if (p.provider === 'youtube') return `https://www.youtube.com/embed/${p.videoId}?rel=0`;
-  if (p.provider === 'vimeo')   return `https://player.vimeo.com/video/${p.videoId}`;
-  return '';
-}
-
-/* ---- the signature: a deterministic MIDI-event strip ---- */
-function hashSeed(str) {
-  let h = 1779033703 ^ str.length;
-  for (let i = 0; i < str.length; i++) {
-    h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
-    h = (h << 13) | (h >>> 19);
-  }
-  return (h >>> 0);
-}
-function mulberry32(a) {
-  return function () {
-    a |= 0; a = (a + 0x6D2B79F5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-function drawStrip(canvas, seed, opts = {}) {
-  const dpr = window.devicePixelRatio || 1;
-  const w = canvas.clientWidth, h = canvas.clientHeight;
-  if (!w || !h) return;
-  canvas.width = w * dpr; canvas.height = h * dpr;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, w, h);
-
-  const rnd = mulberry32(hashSeed(seed));
-  const baseY = h * 0.5;
-  const count = Math.floor((opts.density || 0.12) * w);
-  const amber = getComputedStyle(document.documentElement).getPropertyValue('--signal').trim() || '#E6A12C';
-  const cyan  = getComputedStyle(document.documentElement).getPropertyValue('--signal-cool').trim() || '#6FB7C4';
-
-  // baseline
-  ctx.strokeStyle = 'rgba(148,140,154,0.18)';
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(0, baseY); ctx.lineTo(w, baseY); ctx.stroke();
-
-  for (let i = 0; i < count; i++) {
-    const x = (i / count) * w + rnd() * (w / count) * 0.6;
-    const isCC = rnd() < 0.18;                 // ~1 in 5 events is a CC/knob move
-    const amp = (0.18 + rnd() * 0.78) * (h * 0.42);
-    ctx.lineWidth = isCC ? 2.2 : 1.6;
-    ctx.strokeStyle = isCC ? cyan : amber;
-    ctx.globalAlpha = isCC ? 0.85 : (0.45 + rnd() * 0.5);
-    ctx.beginPath();
-    ctx.moveTo(x, baseY - amp);
-    ctx.lineTo(x, baseY + amp * (isCC ? 0.5 : 0.85));
-    ctx.stroke();
-    if (isCC) { ctx.globalAlpha = 0.9; ctx.fillStyle = cyan;
-      ctx.beginPath(); ctx.arc(x, baseY - amp, 2, 0, 7); ctx.fill(); }
-  }
-  ctx.globalAlpha = 1;
-}
-function mountStrips(root) {
-  root.querySelectorAll('canvas[data-seed]').forEach(c => {
-    drawStrip(c, c.dataset.seed, { density: parseFloat(c.dataset.density) || 0.12 });
+    a.innerHTML = `
+      <div class="card-name">${t.name}</div>
+      <div class="card-blurb">${t.blurb}</div>
+      <div class="tags">${tagsHTML}</div>
+      <div class="launch">
+        <span class="go">Open <span class="arrow">→</span></span>
+        ${t.newTab ? '<span class="newtab">↗ new tab</span>' : ''}
+      </div>`;
+    grid.appendChild(a);
   });
-}
 
-/* ---- views ---- */
-function renderGallery() {
-  document.title = CONFIG.studioName + " — gallery";
-  if (!PIECES.length) {
-    view.innerHTML = `<section class="hero"><p class="eyebrow">Empty gallery</p>
-      <h1>Nothing hung yet.</h1></section>
-      <div class="empty"><h2>Add your first piece</h2>
-      <p>Open this file and add an entry to the <code>PIECES</code> list near the top of the script — a title, a date, and a YouTube or Vimeo ID. It'll appear here.</p></div>`;
-    return;
+  document.getElementById('count').textContent =
+    String(TOOLS.length).padStart(2, '0');
+
+  // signal meter bars
+  const meter = document.getElementById('meter');
+  for (let i = 0; i < 24; i++) {
+    const s = document.createElement('span');
+    s.style.animationDelay = (i * 0.07) + 's';
+    meter.appendChild(s);
   }
-  const cards = PIECES.map(p => {
-    const t = thumbUrl(p);
-    const thumb = t
-      ? `<img src="${t}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><canvas data-seed="${p.id}" data-density="0.14" style="display:none"></canvas>`
-      : `<canvas data-seed="${p.id}" data-density="0.14"></canvas>`;
-    const pending = p.videoId ? '' : `<span class="pending">Coming soon</span>`;
-    return `<a class="card" href="${pieceUrl(p.id)}" data-nav data-id="${p.id}">
-      <div class="card-thumb">${thumb}${pending}
-        <span class="play"><span aria-hidden="true">▶</span></span></div>
-      <div class="card-body">
-        <div class="meta-line"><span class="id">${p.id}</span><span class="sep">/</span>
-          <span>${p.tool}</span><span class="sep">·</span><span>${p.date}</span></div>
-        <h3>${p.title}</h3>
-        <canvas class="mini-strip" data-seed="${p.id}-m" data-density="0.18"></canvas>
-      </div></a>`;
-  }).join('');
-
-  view.innerHTML = `
-    <section class="hero">
-      <p class="eyebrow">Recordings — generative art, performed</p>
-      <h1>Watch the picture get made.</h1>
-      <p class="thesis">Each piece here is a single take on one of my MIDI tools — the art <em>redrawn exactly as it was played</em>. Scan a code, watch it happen.</p>
-      <canvas class="hero-strip" data-seed="hero-${PIECES.length}" data-density="0.09"></canvas>
-    </section>
-    <section class="grid">${cards}</section>`;
-  mountStrips(view);
-}
-
-function renderDetail(p) {
-  document.title = p.title + " — " + CONFIG.studioName;
-  const player = p.videoId
-    ? `<div class="player"><iframe src="${embedUrl(p)}" title="${p.title}"
-         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-         allowfullscreen></iframe></div>`
-    : `<div class="player"><div class="player-empty">
-         <canvas data-seed="${p.id}-big" data-density="0.1"></canvas>
-         <span class="msg">No video linked yet. Add a <b>videoId</b> for <b>${p.id}</b> in the file to go live.</span>
-       </div></div>`;
-
-  view.innerHTML = `
-    <section class="detail">
-      <a class="back" href="?" data-nav>← All works</a>
-      <p class="eyebrow"><span class="id">${p.id}</span><span class="sep">/</span>
-        <span>${p.tool}</span><span class="sep">·</span><span>${p.date}</span></p>
-      <h1>${p.title}</h1>
-      <canvas class="detail-strip" data-seed="${p.id}" data-density="0.07"></canvas>
-      ${player}
-      <div class="detail-foot">
-        <div>${p.blurb.map(b => `<p class="blurb">${b}</p>`).join('')}</div>
-        <div class="aside">
-          <dl class="spec">
-            <dt>Tool</dt><dd>${p.tool}</dd>
-            <dt>Year</dt><dd>${p.date}</dd>
-            <dt>Catalog</dt><dd>${p.id}</dd>
-          </dl>
-          <button class="btn" id="showQr">⊞ Show QR code</button>
-        </div>
-      </div>
-    </section>`;
-  mountStrips(view);
-  $('#showQr').addEventListener('click', () => openQr(p));
-}
-
-/* ---- QR modal ---- */
-const modal = document.getElementById('modal');
-function openQr(p) {
-  const url = pieceUrl(p.id);
-  $('#qrPieceLabel').textContent = p.id + ' — ' + p.title;
-  $('#qrUrl').textContent = url;
-  const target = $('#qrTarget');
-  target.innerHTML = '';
-  if (typeof QRCode === 'undefined') {
-    target.innerHTML = '<p style="font-family:monospace;font-size:12px;color:#a33">Couldn\'t load the QR generator — check your connection and reopen.</p>';
-  } else {
-    new QRCode(target, { text: url, width: 220, height: 220, colorDark: '#161318', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
-  }
-  modal.classList.add('open');
-}
-function closeQr() { modal.classList.remove('open'); }
-$('#qrClose').addEventListener('click', closeQr);
-modal.addEventListener('click', e => { if (e.target === modal) closeQr(); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeQr(); });
-
-/* ---- routing (query param, static-host safe) ---- */
-function route() {
-  const id = new URLSearchParams(location.search).get('piece');
-  const p = id && findPiece(id);
-  if (p) renderDetail(p); else renderGallery();
-  window.scrollTo(0, 0);
-}
-document.addEventListener('click', e => {
-  const link = e.target.closest('a[data-nav]');
-  if (!link) return;
-  e.preventDefault();
-  history.pushState({}, '', link.getAttribute('href'));
-  route();
-});
-window.addEventListener('popstate', route);
-window.addEventListener('resize', () => mountStrips(view));
-
-route();
 </script>
 </body>
 </html>
